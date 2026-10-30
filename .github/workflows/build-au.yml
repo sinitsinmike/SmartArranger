@@ -7,14 +7,23 @@ on:
 
 jobs:
   build-au:
-    # Hosted macOS supplies Xcode; the build cross-compiles an Intel AU.
+    # Hosted macOS supplies Xcode; each matrix job builds one AU architecture.
     runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - architecture: x86_64
+            minimum_macos: "10.13"
+            label: Intel
+          - architecture: arm64
+            minimum_macos: "11.0"
+            label: AppleSilicon
     steps:
       - name: Check out Smart Arranger
         uses: actions/checkout@v4
 
       - name: Unpack project sources
-        run: unzip -q SmartArranger-source-v11.zip -d source
+        run: unzip -q SmartArranger-source-v12.zip -d source
 
       - name: Check out JUCE
         uses: actions/checkout@v4
@@ -29,13 +38,13 @@ jobs:
           cmake --version
           clang++ --version
 
-      - name: Configure Intel AU for macOS 10.13+
+      - name: Configure ${{ matrix.label }} AU for macOS ${{ matrix.minimum_macos }}+
         run: >-
           cmake -S source -B source/build
           -DJUCE_DIR="$GITHUB_WORKSPACE/JUCE"
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
-          -DCMAKE_OSX_ARCHITECTURES=x86_64
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.minimum_macos }}
+          -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }}
 
       - name: Build AU
         run: cmake --build source/build --config Release --target SmartArranger_AU --parallel 2
@@ -43,7 +52,7 @@ jobs:
       - name: Upload AU artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SmartArranger-Intel-AU
+          name: SmartArranger-${{ matrix.label }}-AU
           path: source/build/SmartArranger_artefacts/Release/AU/
           if-no-files-found: error
           retention-days: 14
