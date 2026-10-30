@@ -12,7 +12,7 @@ jobs:
       - name: Check out Smart Arranger
         uses: actions/checkout@v4
       - name: Unpack project sources
-        run: unzip -q SmartArranger-source-v16.zip -d source
+        run: unzip -q SmartArranger-source-v17.zip -d source
       - name: Check out JUCE
         uses: actions/checkout@v4
         with:
