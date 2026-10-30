@@ -1,4 +1,4 @@
-name: Build AU
+name: Build Intel AU
 
 on:
   workflow_dispatch:
@@ -8,20 +8,11 @@ on:
 jobs:
   build-au:
     runs-on: macos-latest
-    strategy:
-      matrix:
-        include:
-          - architecture: x86_64
-            minimum_macos: "10.13"
-            label: Intel
-          - architecture: arm64
-            minimum_macos: "11.0"
-            label: AppleSilicon
     steps:
       - name: Check out Smart Arranger
         uses: actions/checkout@v4
       - name: Unpack project sources
-        run: unzip -q SmartArranger-source-v14.zip -d source
+        run: unzip -q SmartArranger-source-v16.zip -d source
       - name: Check out JUCE
         uses: actions/checkout@v4
         with:
@@ -33,19 +24,19 @@ jobs:
           xcodebuild -version
           cmake --version
           clang++ --version
-      - name: Configure ${{ matrix.label }} AU for macOS ${{ matrix.minimum_macos }}+
+      - name: Configure Intel AU for macOS 10.13+
         run: >-
           cmake -S source -B source/build
           -DJUCE_DIR="$GITHUB_WORKSPACE/JUCE"
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.minimum_macos }}
-          -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }}
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+          -DCMAKE_OSX_ARCHITECTURES=x86_64
       - name: Build AU
         run: cmake --build source/build --config Release --target SmartArranger_AU --parallel 2
-      - name: Upload AU artifact
+      - name: Upload Intel AU artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SmartArranger-${{ matrix.label }}-AU
+          name: SmartArranger-Intel-AU
           path: source/build/SmartArranger_artefacts/Release/AU/
           if-no-files-found: error
           retention-days: 14
