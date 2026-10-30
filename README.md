@@ -10,7 +10,7 @@ Smart Arranger is an experimental AU MIDI effect for Logic Pro. It is being deve
 - Saves the style path and selected section in the Logic project state.
 - Plays and loops one selected style section in sync with Logic's tempo and transport. The section button grid is populated from the loaded style.
 - Provides a host-synced demonstration bass-and-chord pattern when no style is loaded.
-- Uses a dark arranger-inspired panel with the loaded style name and section buttons.
+- Uses a Vintage arranger-inspired panel with the loaded style name and section buttons; see [mockup/](mockup/).
 
 ## Known limitations
 
@@ -31,11 +31,12 @@ Smart Arranger is an experimental AU MIDI effect for Logic Pro. It is being deve
 ## Next work
 
 1. Verify the latest Intel AU's text rendering, style loading, section buttons, and playback in Logic.
-2. Implement chord-following for style parts, starting with root/quality-aware note transformation, then add per-part Yamaha CASM/NTR/NTT/RTR behavior.
-3. Add musical section transitions: Intro, Main A-D, Fill, Break, and Ending with bar-aware switching.
-4. Map style channels to parts and design a practical Logic instrument-routing workflow for multi-part playback.
-5. Improve chord recognition, voicing, note cleanup, state restoration, and compatibility checks on supported Logic/macOS versions.
-6. Add an optional on-screen keyboard with chord-zone and melody-zone highlighting.
+2. Polish the editor layout: section buttons protrude slightly beyond the section panel's left and right edges, and the accompaniment button sits too close to the first row. Rework the horizontal margins and vertical spacing in a dedicated UI pass.
+3. Implement chord-following for style parts, starting with root/quality-aware note transformation, then add per-part Yamaha CASM/NTR/NTT/RTR behavior.
+4. Add musical section transitions: Intro, Main A-D, Fill, Break, and Ending with bar-aware switching.
+5. Map style channels to parts and design a practical Logic instrument-routing workflow for multi-part playback.
+6. Improve chord recognition, voicing, note cleanup, state restoration, and compatibility checks on supported Logic/macOS versions.
+7. Add an optional on-screen keyboard with chord-zone and melody-zone highlighting.
 
 ## Development rules
 
