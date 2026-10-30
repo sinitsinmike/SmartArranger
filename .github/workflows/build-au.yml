@@ -1,33 +1,27 @@
 name: Build AU
-
 on:
   workflow_dispatch:
   push:
   pull_request:
-
 jobs:
   build-au:
     runs-on: macos-latest
     steps:
       - name: Check out Smart Arranger
         uses: actions/checkout@v4
-
       - name: Unpack project sources
-        run: unzip -q SmartArranger-source-root.zip -d source
-
+        run: unzip -q SmartArranger-source-v3.zip -d source
       - name: Check out JUCE
         uses: actions/checkout@v4
         with:
           repository: juce-framework/JUCE
           ref: 9.0.4
           path: JUCE
-
       - name: Show build toolchain
         run: |
           xcodebuild -version
           cmake --version
           clang++ --version
-
       - name: Configure Intel AU for macOS 10.13+
         run: >-
           cmake -S source -B source/build
@@ -35,10 +29,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
           -DCMAKE_OSX_ARCHITECTURES=x86_64
-
       - name: Build AU
         run: cmake --build source/build --config Release --target SmartArranger_AU --parallel 2
-
       - name: Upload AU artifact
         uses: actions/upload-artifact@v4
         with:
