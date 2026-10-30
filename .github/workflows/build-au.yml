@@ -35,6 +35,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SmartArranger-Intel-AU
-          path: source/build/SmartArranger_artefacts/Release/AU/Smart Arranger.component
+          path: source/build/SmartArranger_artefacts/Release/AU/
           if-no-files-found: error
           retention-days: 14
