@@ -11,9 +11,8 @@
 ### Current limits
 
 - The detector examines all held notes and can misidentify extensions, melody notes, inversions, or ambiguous pitch collections.
-- The chord detector provides the harmony estimate used by the basic generator, but is not yet used to adapt imported style material.
-- No `.STY` parser, style playback, section transitions, or multi-part routing is implemented.
-- Compilation proves the AU target builds, not that this detector has been musically validated in Logic.
+- The chord detector provides the harmony estimate used by the basic generator and the initial style-note transform below.
+- Compilation proves the AU target builds, not that chord recognition has been musically validated in Logic.
 
 ## Increment 2: style metadata inspection
 
@@ -25,24 +24,24 @@
 
 ### Current limits
 
-- The parser source has been compiled with a lightweight JUCE API shim and run against five local user-supplied style files: four SFF2 and one SFF1, all parsed with 16 sections and nonempty MIDI event lists. These fixtures are not verified as official Yamaha styles and are excluded from the repository and build archive.
-- The parser has not yet been built against JUCE itself or exercised through the AU in Logic, so the end-to-end loader/playback path remains unverified.
+- The parser has been smoke-checked against five local user-supplied style files: four SFF2 and one SFF1. They are not verified as official Yamaha styles and are excluded from the repository and build archive.
+- The end-to-end loader/playback path still needs direct verification in Logic.
 - It does not interpret CASM/NTR/NTT/RTR or map MIDI channels to Yamaha part names.
-- The event playback stage below schedules one selected section unchanged; it does not adapt notes to performed chords.
+- The playback stage schedules one selected section and applies the global chord transform documented in Increment 9.
 
-## Increment 3: host-synchronized basic accompaniment
+## Increment 3: basic accompaniment
 
 - Add an opt-in accompaniment switch in the editor.
 - Keep the most recently recognized chord after the performed chord is released.
-- Generate a simple bass-and-chord fallback pattern, clocked to host PPQ position and tempo.
-- Schedule generated MIDI from Logic's PPQ position and tempo; release generated notes when stopped or disabled.
+- Generate a simple bass-and-chord fallback pattern from an internal audio-block clock, using Logic tempo/meter when available.
+- Release generated notes when the plugin START/STOP toggle is stopped.
 
 ### Current limits
 
 - This is a fixed demonstration pattern, not a Yamaha style playback engine.
 - Chord changes inside a MIDI block are applied at block granularity.
 - Voicing, voice-leading, fills, sections, part assignment, and CASM rules are not implemented.
-- Host PPQ/tempo delivery and generated MIDI behavior still need direct Logic verification.
+- Host tempo/meter delivery and generated MIDI behavior still need direct Logic verification.
 
 ## Increment 4: host parameter and project state
 
@@ -50,55 +49,68 @@
 - Bind the editor toggle to the parameter attachment.
 - Save and restore the parameter through the processor state so projects reopen consistently.
 
-## Increment 5: host-synchronized playback of one style section
+## Increment 5: playback of one style section
 
 - Add a section selector populated from the loaded style markers.
-- Copy the selected section's MIDI channel events into an immutable playback buffer off the audio thread, then publish it with a two-slot reader-count handoff.
-- Schedule the section's MIDI events against the Logic PPQ position and host tempo, and loop the selected section continuously while accompaniment is enabled.
-- Preserve event channels and one- or two-data-byte MIDI messages; stop generated notes when playback stops, the host seeks, the style changes, or accompaniment is disabled.
-- If no valid style is loaded, retain the basic generated accompaniment as the fallback.
+- Copy the selected section MIDI events into an immutable playback buffer off the audio thread, then publish it with a two-slot reader-count handoff.
+- Schedule section events against an internal clock advanced by audio blocks and loop while accompaniment is enabled; use Logic tempo/meter when available and style metadata otherwise.
+- Preserve MIDI channels and messages; stop generated notes when plugin accompaniment is disabled or the selected style section changes.
+- If no style is loaded, retain the basic generated accompaniment as the fallback.
 
-## Increment 6: persist style selection in the Logic project
+## Increment 6: persist style selection
 
-- Save the loaded style's local file path and selected section index in the processor state.
-- Restore the file and section from the editor after the host restores the project state.
+- Save the loaded style local path and selected section index in processor state.
+- Restore the file and section from the editor after host state restoration.
 - Keep style files out of the repository and AU artifact; the user selects a local file.
 
 ## Increment 7: host-meter-aware fallback accompaniment
 
-- Read the host time signature from JUCE `AudioPlayHead::PositionInfo` and default to 4/4 if it is unavailable or malformed.
-- Place the demonstration accompaniment on a subdivision grid derived from the denominator and bar length from the numerator.
-- Keep event timing tied to the host PPQ position and tempo.
+- Read the host time signature from JUCE `AudioPlayHead::PositionInfo` and default to 4/4 if unavailable or malformed.
+- Place the demo accompaniment on a subdivision grid derived from the denominator and bar length from the numerator.
+- Use host meter and tempo when available while advancing from the plugin audio-block clock.
 
 ## Increment 8: separate Intel and Apple Silicon CI artifacts
 
 - Configure a macOS 10.13+ x86_64 AU build and a macOS 11.0+ arm64 AU build.
-- Publish each architecture as a separately named GitHub Actions artifact for later Logic verification and release packaging.
+- Publish each architecture as a separately named GitHub Actions artifact.
 
 ### Current limits
 
-- If the style file has moved or is unavailable, playback cannot resume until the file is available at the saved path or selected again.
-- Style state restoration reads the file during host state restoration; this path has not yet been verified in Logic.
-- The fallback rhythm remains a simple demonstration pattern; it does not yet use meter-specific musical phrasing or style data.
-- The arm64 build and native Apple Silicon Logic loading still require CI and host verification.
+- Style state restoration and Apple Silicon loading still need direct verification in Logic.
+
+## Increment 9: basic chord-following for imported styles
+
+- Pass incoming MIDI through while retaining the latest recognized harmony.
+- Transpose imported style notes from a C-major reference to the detected chord root, with basic third and fifth changes for common chord qualities.
+- Apply harmony changes at arranger bar boundaries and send note-offs for active notes using the pitches that were actually started.
+- Keep program changes, channels, timing, and other non-note style events unchanged.
 
 ### Current limits
 
-- Playback is unmodified source MIDI: chord input does not yet transpose or otherwise adapt style notes.
-- Only the selected section is looped; intro, fill, break, ending, and automatic transitions are not sequenced.
-- Style selection restoration still needs direct Logic verification.
-- MIDI event scheduling and note cleanup still need direct verification in Logic Pro on Intel and Apple Silicon hosts.
+- The transform is global and assumes source style notes are centered on C major. It does not decode Yamaha CASM, NTR, NTT, or RTR instructions, so some styles may not reharmonize correctly.
+- Passing chords, part-specific rules, inversions, and voice-leading are not implemented.
+
+## Increment 10: arranger transport independent of Logic transport
+
+- The plugin START/STOP toggle controls style playback without starting or stopping Logic transport.
+- Advance the style clock from processed audio blocks; follow host tempo/meter when available and use style tempo/meter otherwise.
+- Apply chord changes on arranger bar boundaries rather than Logic playhead positions.
+
+### Current limits
+
+- Logic still has to process the instrument track and route MIDI FX output to an instrument. Whether Logic continuously calls this AU while transport is stopped must be verified on the target setup.
+- START/STOP begins the selected section and loops it. Automatic Intro-to-Main and queued section transitions are not implemented.
 
 ## Next increments
 
-1. Validate the style reader and section scheduler with real SFF1/SFF2 `.STY` files and harden them against format variants.
-2. Map preserved MIDI channels to style parts and interpret Yamaha CASM/NTR/NTT/RTR rules so notes follow the performed chord.
-3. Add tempo and meter aware section transitions, fills, breaks, intros, and endings after the single-section scheduler is verified.
+1. Verify style reader, chord-following, plugin START/STOP with transport stopped, host tempo behavior, and note cleanup in Logic.
+2. Map MIDI channels to style parts and interpret Yamaha CASM/NTR/NTT/RTR rules to replace the global chord transform.
+3. Add queued flow: Intro once, then selected Main; add fills, breaks, and endings.
 
 ## Visual polish backlog
 
-Logic review of the Vintage editor found small layout defects to address in a later UI-only pass:
+Logic review of the Vintage editor found small layout defects for a later UI-only pass:
 
 - The section button grid extends a few pixels beyond the left and right edges of its panel.
 - The accompaniment toggle is too close to the first row of section buttons and appears slightly high.
-- Rework the editor's horizontal margins and vertical rhythm together; these are visual issues and do not block style loading or playback.
+- Rework the editor horizontal margins and vertical rhythm together; these visual issues do not block style loading or playback.
