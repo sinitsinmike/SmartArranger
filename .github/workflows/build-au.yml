@@ -7,7 +7,6 @@ on:
 
 jobs:
   build-au:
-    # Hosted macOS supplies Xcode; each matrix job builds one AU architecture.
     runs-on: macos-latest
     strategy:
       matrix:
@@ -21,23 +20,19 @@ jobs:
     steps:
       - name: Check out Smart Arranger
         uses: actions/checkout@v4
-
       - name: Unpack project sources
-        run: unzip -q SmartArranger-source-v12.zip -d source
-
+        run: unzip -q SmartArranger-source-v13.zip -d source
       - name: Check out JUCE
         uses: actions/checkout@v4
         with:
           repository: juce-framework/JUCE
           ref: 9.0.4
           path: JUCE
-
       - name: Show build toolchain
         run: |
           xcodebuild -version
           cmake --version
           clang++ --version
-
       - name: Configure ${{ matrix.label }} AU for macOS ${{ matrix.minimum_macos }}+
         run: >-
           cmake -S source -B source/build
@@ -45,10 +40,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.minimum_macos }}
           -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }}
-
       - name: Build AU
         run: cmake --build source/build --config Release --target SmartArranger_AU --parallel 2
-
       - name: Upload AU artifact
         uses: actions/upload-artifact@v4
         with:
