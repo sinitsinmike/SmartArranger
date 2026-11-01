@@ -20,7 +20,7 @@ jobs:
           path: JUCE
 
       - name: Unpack project sources
-        run: unzip -q SmartArranger-source-v32.zip -d source
+        run: unzip -q SmartArranger-source-v33.zip -d source
 
       - name: Show build toolchain
         run: |
