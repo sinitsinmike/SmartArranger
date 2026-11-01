@@ -1,48 +1,27 @@
 # Smart Arranger
 
-Smart Arranger is an experimental AU MIDI effect for Logic Pro, being developed as a style-based live arranger.
+Smart Arranger is an experimental AU MIDI effect for Logic Pro, being developed as a Yamaha-style live arranger. The first target profile is the PSR-SX920/SX720 family and supported SFF/SFF GE style files; compatibility still needs file-by-file verification.
 
-## Implemented
+## Implemented prototype
 
-- AU MIDI effect built with JUCE 9.0.4.
-- Passes incoming MIDI through and shows a preliminary live chord estimate.
-- Loads user-selected Yamaha-style files and reads title, tempo, meter, sections, and MIDI events.
-- Saves the selected style path and section in Logic project state.
-- Plugin START/STOP controls accompaniment independently of Logic transport. The arranger clock uses host tempo/meter when available, otherwise style tempo/meter.
-- Plays and loops the selected section; when no style is loaded, generates a basic bass-and-chord pattern.
-- Imported style notes follow the detected chord root and basic triad quality, changing harmony at arranger bar boundaries.
-- Vintage arranger-inspired interface; see [mockup/](mockup/).
+- JUCE AU MIDI effect passes incoming MIDI through and displays a preliminary live chord estimate.
+- Loads a user-selected .STY file and reads its title, tempo, meter, sections, and MIDI events. Selected CASM records and fields are decoded for inspection while unknown bytes are retained.
+- Saves the selected style path and section with the Logic project.
+- Plugin START/STOP is independent of Logic transport. The arranger clock follows host tempo/meter when available, otherwise style metadata.
+- Plays the selected style section. Intro plays once and moves to Main; Fill and Break play once and return to Main; Ending plays once and stops. Requests during a one-shot section wait until it finishes; requests during a looping section queue for the next bar.
+- Without a loaded style, the plugin can generate a simple demonstration bass-and-chord pattern.
+- Vintage arranger-inspired interface with style name, section buttons, and live chord display. See [mockup/](mockup/).
 
-## Try it in Logic
+## Not implemented yet
 
-Load a style, choose a section, then press START in the plugin. This starts or stops the arranger only; it does not start or stop Logic transport. The selected section repeats until STOP or another section is selected. Logic still hosts MIDI/audio processing and supplies tempo/meter when available. Intro currently repeats; automatic Intro-to-Main flow is not implemented.
-
-## Known limitations
-
-- The chord transform is a global prototype that assumes source style notes are centered on C major. It does not implement Yamaha per-part CASM/NTR/NTT/RTR rules; passing chords, melody notes, and some styles may not harmonize correctly.
-- Logic must process the track and route the MIDI FX output to an instrument. Whether Logic continuously calls this AU while transport is stopped still needs direct verification.
-- Section buttons directly select a repeating section; queued transitions, automatic fills, breaks, and endings are not sequenced.
-- Style parts are not mapped to instrument patches or separate Logic tracks.
-- Chord recognition and style playback need more end-to-end musical verification in Logic. Five user-supplied SFF1/SFF2 files were parser smoke fixtures only.
+- CASM parsing is not yet used to apply Yamaha per-part NTR/NTT/RTR harmony rules. Imported style notes still use a global C-major-reference prototype, so harmony may be wrong for some parts and styles.
+- Chord recognition is a common pitch-class heuristic across incoming MIDI channels. Yamaha fingering modes, selectable chord/bass channel masks, keyboard zones, and full slash-chord handling are not implemented.
+- Style channels are not mapped to instrument parts or separate Logic instruments; the MIDI effect cannot instantiate patches or create tracks.
+- The current source archive v21 has not been rebuilt or validated in Logic. The new CASM decoder and chord-state changes may compile, but need a build and host testing before relying on them.
 - No Yamaha style files are bundled.
 
-## Build and compatibility
+## Build and testing
 
-- Current CI target: Intel x86_64 AU, macOS 10.13 deployment target.
-- The AU MIDI effect belongs in Logic MIDI FX before a software instrument.
-- See [docs/implementation-status.md](docs/implementation-status.md) for implementation detail and [Smart_Arranger.md](Smart_Arranger.md) for the original brief.
-
-## Next work
-
-1. Build and verify the v19 AU in Logic with transport stopped and running; confirm live chord changes, tempo, and note cleanup.
-2. Replace the global C-major-reference transform with Yamaha per-part CASM/NTR/NTT/RTR behavior and improve voicing.
-3. Add queued section flow: Intro once, then selected Main; queue fills/breaks and end cleanly. Keep arranger START/STOP separate from Logic transport.
-4. Map style channels to parts and design a practical multi-instrument Logic routing workflow.
-5. Polish the small section-grid and accompaniment-toggle spacing issues recorded in [docs/implementation-status.md](docs/implementation-status.md).
-6. Improve chord recognition, state restoration, and supported host/macOS compatibility checks.
-7. Add an optional on-screen keyboard.
-
-## Development rules
-
-- Treat user-provided styles as local test fixtures; only commit them when redistribution is confirmed.
-- Do not claim host or style-format support until tested in Logic with real files.
+- CI target: Intel x86_64 AU with a macOS 10.13 deployment target. The workflow uses the versioned source archive and can be started manually when ready.
+- Place the AU MIDI effect in Logic's MIDI FX slot before a software instrument.
+- See [docs/implementation-status.md](docs/implementation-status.md) for the detailed implementation record and [Smart_Arranger.md](Smart_Arranger.md) for the original brief.
