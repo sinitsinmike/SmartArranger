@@ -1,0 +1,42 @@
+name: Build Intel Standalone
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+jobs:
+  build-standalone:
+    runs-on: macos-15-intel
+    steps:
+      - name: Check out Smart Arranger
+        uses: actions/checkout@v4
+
+      - name: Check out JUCE
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 9.0.4
+          path: JUCE
+
+      - name: Configure Intel Standalone for High Sierra
+        run: >-
+          cmake -S . -B build-standalone
+          -DJUCE_DIR="$GITHUB_WORKSPACE/JUCE"
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+          -DCMAKE_OSX_ARCHITECTURES=x86_64
+
+      - name: Build Standalone app
+        run: cmake --build build-standalone --config Release --target SmartArranger_Standalone --parallel 2
+
+      - name: Package app
+        run: ditto -c -k --sequesterRsrc --keepParent "build-standalone/SmartArranger_Standalone_artefacts/Release/Smart Arranger Standalone.app" Smart-Arranger-Standalone-Intel-High-Sierra.zip
+
+      - name: Upload Standalone artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Smart-Arranger-Standalone-Intel-High-Sierra
+          path: Smart-Arranger-Standalone-Intel-High-Sierra.zip
+          if-no-files-found: error
+          retention-days: 14

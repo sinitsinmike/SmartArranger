@@ -2,6 +2,10 @@
 
 Smart Arranger is an experimental AU MIDI effect for Logic Pro. It is being developed as a style-based live arranger: play chords on a MIDI keyboard and have accompaniment follow them.
 
+An experimental macOS Standalone diagnostic app is also available. It uses the same processor and style parser, exposes a CoreMIDI virtual output named `Smart Arranger MIDI Out`, and displays style part/output-channel information plus live note-on counts for MIDI channels 1-16. In the standalone app, an optional MIDI keyboard is used only for chord control; its raw notes are not passed to the output. The arranger starts and stops from its own control.
+
+The standalone app also follows the current macOS default audio output, including when headphones are connected or disconnected while it is running. Its macOS **Settings** menu controls optional internal SF2 playback and the keyboard split point (default C3): notes at or below the split control accompaniment, while higher notes play as melody. Choose a GM or XG `.sf2` and enable **Internal Sounds** to hear the generated MIDI through the Mac's audio output. Preset names and bank/program pairs are read from the chosen SoundFont; it is not bundled with the app. Right-click a MIDI output channel indicator to choose an SF2 preset or a General MIDI voice, or return to the style's own assignment. Manual assignment sends Bank Select and Program Change on that output channel. Press **Space** to start/stop and **1–0** to select the first ten visible sections. The selected **View** layout and section visibility are saved and restored when the standalone app restarts. SF2 feature coverage is limited by TinySoundFont; see [implementation status](docs/implementation-status.md).
+
 ## Implemented
 
 - AU MIDI effect target for Logic Pro, built with JUCE 9.0.4.
@@ -34,6 +38,9 @@ Load a style and press START in the plugin. With an Intro selected, it plays onc
 ## Build and compatibility
 
 - Current continuous-integration target: Intel x86_64 AU with a macOS 10.13 deployment target.
+- Standalone is built as Intel x86_64 with macOS 10.13 as its deployment target, intended for High Sierra Intel Macs. The app was compiled and launched on a newer macOS; runtime behavior on an actual High Sierra machine still needs confirmation.
+- Build the diagnostic app with `cmake -S . -B build-standalone -DJUCE_DIR=/path/to/JUCE -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DCMAKE_OSX_ARCHITECTURES=x86_64`, then `cmake --build build-standalone --target SmartArranger_Standalone`.
+- In Logic, choose `Smart Arranger MIDI Out` as the MIDI input on one or more instrument tracks. The standalone channel counters show which channels the shared engine sends; Logic recording confirms what arrives at the host.
 - v34 source and a locally built Intel AU are in the repository. The v34 source is queued for a GitHub Actions build; the current artifact still needs validation in Logic.
 - The AU is a MIDI effect; place it in Logic's MIDI FX slot before a software instrument.
 - See [docs/implementation-status.md](docs/implementation-status.md) and [Smart_Arranger.md](Smart_Arranger.md).
@@ -47,6 +54,8 @@ Load a style and press START in the plugin. With an Intro selected, it plays onc
 5. Design a practical Logic instrument-routing workflow for multitimbral playback, including per-channel patch setup.
 6. Improve chord recognition, voicing, note cleanup, state restoration, and compatibility checks.
 7. Add an optional on-screen keyboard with chord-zone and melody-zone highlighting.
+8. Add MIDI Learn and manual MIDI CC assignment for every arranger section and the Start/Stop control.
+9. Plan an Android version with a phone-first compact screen: style-section buttons, Start/Stop, Load STY, Settings, tempo, meter, and the recognized live chord. Keep the instrument list off the phone screen to save space. Put Split Point and MIDI input/output device selection on a Settings page, listing available devices. Adapt the layout for tablets without shifted or overlapping controls.
 
 ## Development rules
 

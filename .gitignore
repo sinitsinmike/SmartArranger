@@ -1,0 +1,4 @@
+build-standalone/
+build-view-fix/
+outputs/
+.DS_Store

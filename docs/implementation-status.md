@@ -1,4 +1,4 @@
-# Implementation status — source archive v34 (local build succeeded; Logic check pending)
+# Implementation status — standalone Main D NTT 7 fix (local build succeeded; playback check pending)
 
 ## Increment 1: live chord display
 
@@ -90,9 +90,16 @@
 
 ### Current limits
 
-- High Key, note limits, RTR, Guitar NTR, Bass-On, and the non-Bypass NTT tables are not applied.
+- High Key, note limits, RTR, Guitar NTR, and non-Bypass NTT details remain incomplete. For SFF2 `Root Trans + Melody NTT + Bass-On`, the engine now applies the source-root-to-live-root semitone shift so bass follows chord-root changes; chord-quality substitutions and slash-bass behavior are not implemented.
 - The 12 pitch-class note mask is decoded but its playback effect remains uncertain; implement only after a controlled differential fixture establishes its exact gate.
 - This is a bounded SFF2 increment, not general SFF2/GE compatibility.
+
+## Targeted fix: SFF2 Root Trans + Harmonic Minor 5th
+
+- In `Bridge Over Troubled Water.sty`, Main D maps source channel 6 (`PhrsMain`) to output MIDI 15. Its Main zone is `NTR=Root Trans`, `NTT=7 (Harmonic Minor 5th)`, with Bass-On disabled.
+- The renderer previously passed this NTT through unchanged, which left that part in the authored key while the other mapped parts transposed.
+- The renderer now transposes this combination by the signed root interval and applies the documented major/minor third change and fifth adjustment for diminished/augmented target chords. Other NTT values remain unchanged until implemented.
+- This is a bounded interpretation of the Yamaha NTT description, not a bit-for-bit verified Yamaha engine. Confirm Main D in the standalone after the build.
 
 ## Increment 9: CASM destination-channel routing
 
@@ -105,6 +112,23 @@
 - This only emits MIDI on the logical destination channels. It does not create Logic tracks, configure a multitimbral instrument, or map Yamaha voice/bank data to patches.
 - Multiple sources can map to the same destination. Their same-pitch overlaps and program-change interactions need controlled MIDI/Logic verification.
 - The v34 AU compiled locally for x86_64 with JUCE 9.0.4 and a macOS 10.13 deployment target. It has not been installed or checked in Logic. GitHub integration write access is currently unavailable.
+
+## Increment 10: initial SFF2 Root Fixed + NTT Chord mapping
+
+- For an unambiguous SFF2 source using Root Fixed + NTT Chord with Bass-On disabled, decode a bounded set of common source chord types and identify authored chord tones relative to Source Root.
+- Map those chord tones to the nearest pitch in the currently detected chord, preferring the higher pitch on equal-distance choices and applying the zone's Note Low/High limits. Non-chord/passing notes and unknown source chord types remain unchanged.
+- This lets common chordal patterns respond to the live chord without changing unsupported NTR/NTT combinations.
+
+### Current limits
+
+- Yamaha's PSR-SX920/SX720 Reference Manual describes the purpose of Root Fixed and NTT Chord but does not publish the complete note-to-note NTT algorithm. The implemented nearest-tone mapping is a conservative first approximation informed by the non-Yamaha Style Files v2.1 technical reference; it is **not verified bit-for-bit Yamaha behavior**.
+- Duplicate chord tones, exact voice allocation for 4/5-note source chords, note masks, High Key, RTR, Guitar NTR, and the complete Yamaha chord vocabulary are not resolved here. Compare against a PSR-SX920/SX720 or a trusted reference renderer before claiming Yamaha-compatible voicing.
+- The first target is the user-provided `Bridge Over Troubled Water.sty` Main A Ctb2 case (Source Root C, Source Chord Maj7, Root Fixed + Chord). Other SFF2 cases use the same conservative subset only when their metadata is recognized.
+
+## Increment 11: SFF2 Root Trans bass-root following
+
+- For a decoded `Root Trans + Melody NTT + Bass-On` zone, transpose the authored notes by the difference between the style's Source Root and current chord root. This fixes bass parts that previously stayed in the authored key because Bass-On zones were returned unchanged.
+- This applies root movement only. Yamaha's full Melody NTT chord-quality conversion, slash-chord bass-note selection, and RTR behavior remain unimplemented and require reference validation.
 
 ## Increment 5: bar-aware section flow
 
@@ -127,6 +151,19 @@
 - Add a separate Sync On/Off mode for Logic tempo, meter, and transport when recording. Preserve the independent arranger transport when Sync is off.
 - Record section-button actions as replayable MIDI events or automation. This is a design target, not implemented behavior.
 
+## Future controls and standalone interface
+
+- Add manual MIDI CC assignment and MIDI Learn for every arranger section (Intro, Main, Fill, Ending, etc.) and Start/Stop. Mapping is not implemented yet.
+- Android is a future target. Phone main screen should show only the essentials: style-section buttons, Start/Stop, Load STY, Settings, tempo, meter, and the recognized live chord; omit the instrument list to preserve space. A dedicated Settings page should offer Split Point plus MIDI input/output selection from available devices. Use a responsive layout for phones and tablets, keeping controls aligned and usable at both sizes.
+- Windows is also feasible with JUCE, but no Windows target or artifact is configured yet. Add a Windows standalone CI job after separating desktop targets from macOS-only AU and deployment settings.
+- Standalone now has a macOS `Settings` menu and an `Internal Sounds and SoundFont…` panel. It can load a user-selected SF2 file, enable/disable internal playback, and remember both choices.
+- Standalone SF2 rendering uses TinySoundFont v0.9 (MIT). The selected file remains user-provided; no SoundFont is bundled. Settings reports how many of the 128 bank-0 programs exist, but that count alone does not certify a file's GM/XG mapping or sound quality.
+- Standard MIDI Bank Select (CC 0/32) and Program Change messages from a style are sent to the internal SF2 renderer. Yamaha styles may store setup inside SInt; the latest preceding bank/program state is now copied into each section so direct section starts inherit the style's instrument assignments.
+- Standalone keyboard shortcuts: Space toggles arranger start/stop; number keys 1–9 and 0 select the first ten visible sections in their displayed order. Hovering a MIDI output channel indicator shows the SF2 bank/program currently selected and whether bank fallback was used.
+- The standalone app saves the selected View layout and visibility toggles for MIDI Controls, Style Parts, MIDI Out Activity, and Arranger, then restores them on the next launch.
+- TinySoundFont does not implement all SoundFont 2 features (including modulators and chorus/reverb sends). This is a first practical playback engine, not a reference-grade Yamaha XG synthesizer. Yamaha-specific SysEx voice decoding remains unsupported; bank/preset selection works only when the loaded SF2 contains a matching bank and program.
+- The shared editor's header is labelled `STYLE SELECTION`; product branding belongs in the app or plug-in window title rather than repeated inside that panel.
+
 ## Build and compatibility
 
 - The current GitHub Actions workflow builds an Intel x86_64 AU with a macOS 10.13 deployment target.
@@ -135,6 +172,7 @@
 - Source v34 adds CASM destination-channel routing. Its Intel AU compiled locally using JUCE 9.0.4, Apple Clang 15, and the Command Line Tools SDK with a macOS 10.13 deployment target. It is not code-signed or notarized; GitHub Actions and Logic host validation remain pending.
 - Source v27 layout was verified by the user in Logic: section buttons and long style-name sizing display correctly. Source v28 adds the section/channel CASM mapping; that new code still needs a build and host check.
 - Previous Apple Silicon builds and the user's Logic launch demonstrate that the plugin can load in that tested setup; every new behavior still needs host verification.
+- The standalone with Settings and initial SF2 playback support compiles locally for x86_64 with JUCE 9.0.4 and a macOS 10.13 deployment target. SF2 loading and audible playback still need to be checked on the user's Mac with a GM-compatible file.
 - No style files are bundled with the repository or artifacts.
 
 ## Visual polish
