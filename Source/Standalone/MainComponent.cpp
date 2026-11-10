@@ -1830,7 +1830,7 @@ void SmartArrangerStandaloneComponent::showChannelInstrumentMenu (int channel)
         return;
 
     juce::PopupMenu menu;
-    menu.addItem (1, "Auto — use instrument data from style",
+    menu.addItem (1, "Use style instrument assignment",
                   true, ! manualInstrumentEnabled[(size_t) channel].load());
 
     juce::PopupMenu gmMenu;
