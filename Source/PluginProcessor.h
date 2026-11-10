@@ -40,6 +40,8 @@ public:
     void setAccompanimentEnabled (bool shouldEnable) noexcept;
     bool isAccompanimentEnabled() const noexcept;
     void setMidiThruEnabled (bool shouldEnable) noexcept;
+    void setTempoRate (float rate) noexcept;
+    float getTempoRate() const noexcept;
     // Standalone keyboard split: notes at/below the split control harmony and
     // are removed from the outgoing stream; upper notes remain playable.
     // A negative value disables split handling for the AU plugin.
@@ -129,6 +131,7 @@ private:
     // sample rate supplied by prepareToPlay for both paths.
     double playbackSampleRate = 0.0;
     std::atomic<bool> midiThruEnabled { true };
+    std::atomic<float> tempoRate { 1.0f };
     std::atomic<int> keyboardSplitPoint { -1 };
     std::array<uint8_t, 5> activeGeneratedNotes { 255, 255, 255, 255, 255 };
     int64_t lastGeneratedStep = -1;

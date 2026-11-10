@@ -986,6 +986,7 @@ void SmartArrangerAudioProcessor::renderAccompaniment (juce::MidiBuffer& midi,
     }
 
     const double ppqStart = fallbackClockPpq;
+    tempo *= static_cast<double> (tempoRate.load (std::memory_order_relaxed));
     const double ppqPerBlock = static_cast<double> (blockSamples) * tempo
                              / (60.0 * playbackSampleRate);
     const double ppqEnd = ppqStart + ppqPerBlock;
@@ -1192,6 +1193,7 @@ bool SmartArrangerAudioProcessor::renderLoadedStyle (juce::MidiBuffer& midi,
     }
 
     const double ppqStart = styleClockPpq;
+    tempo *= static_cast<double> (tempoRate.load (std::memory_order_relaxed));
     const double ppqPerBlock = static_cast<double> (blockSamples) * tempo
                              / (60.0 * playbackSampleRate);
     const double ppqEnd = ppqStart + ppqPerBlock;
@@ -1487,6 +1489,16 @@ bool SmartArrangerAudioProcessor::isAccompanimentEnabled() const noexcept
 void SmartArrangerAudioProcessor::setMidiThruEnabled (bool shouldEnable) noexcept
 {
     midiThruEnabled.store (shouldEnable, std::memory_order_relaxed);
+}
+
+void SmartArrangerAudioProcessor::setTempoRate (float rate) noexcept
+{
+    tempoRate.store (juce::jlimit (0.5f, 2.0f, rate), std::memory_order_relaxed);
+}
+
+float SmartArrangerAudioProcessor::getTempoRate() const noexcept
+{
+    return tempoRate.load (std::memory_order_relaxed);
 }
 
 void SmartArrangerAudioProcessor::setKeyboardSplitPoint (int midiNote) noexcept

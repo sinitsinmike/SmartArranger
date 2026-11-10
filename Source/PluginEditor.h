@@ -26,6 +26,9 @@ private:
     juce::OwnedArray<juce::TextButton> sectionButtons;
     juce::Array<int> sectionButtonToStyleIndex;
     juce::TextButton accompanimentButton { "ACCOMPANIMENT  OFF" };
+    juce::Slider tempoRateSlider;
+    juce::Label tempoRateCaption;
+    juce::Label tempoRateValue;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> accompanimentAttachment;
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::String styleSummary { "No style loaded" };

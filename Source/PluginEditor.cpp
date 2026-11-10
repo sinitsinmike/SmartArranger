@@ -4,6 +4,36 @@
 
 namespace
 {
+juce::File copyPickedUrlToLocalFile (const juce::URL& url, const juce::String& fallbackExtension)
+{
+#if JUCE_ANDROID
+    auto document = juce::AndroidDocument::fromDocument (url);
+    if (! document || ! document.getInfo().canRead())
+        return {};
+
+    auto stream = document.createInputStream();
+    if (stream == nullptr)
+        return {};
+
+    juce::MemoryBlock data;
+    if (stream->readIntoMemoryBlock (data) <= 0 || data.isEmpty())
+        return {};
+
+    auto name = document.getInfo().getName();
+    auto extension = juce::File (name).getFileExtension();
+    if (extension.isEmpty())
+        extension = fallbackExtension;
+    auto destination = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                           .getChildFile ("SmartArranger-" + juce::String (juce::Time::getMillisecondCounter()) + extension);
+    return destination.replaceWithData (data.getData(), data.getSize()) ? destination : juce::File();
+#else
+    return url.getLocalFile();
+#endif
+}
+}
+
+namespace
+{
 const juce::Colour background (0xff0b1118);
 const juce::Colour panel (0xff171d23);
 const juce::Colour panelEdge (0xff665238);
@@ -55,6 +85,29 @@ int getSectionPanelHeight (int sectionCount)
     return juce::jmax (114, 58 + rows * buttonHeight + (rows - 1) * gap);
 }
 
+bool usesPhoneLayout (int width)
+{
+#if JUCE_ANDROID
+    return width < 760;
+#else
+    juce::ignoreUnused (width);
+    return false;
+#endif
+}
+
+int getPhoneSectionColumns (int width)
+{
+    return width < 420 ? 2 : (width < 760 ? 3 : 4);
+}
+
+int getPhoneEditorHeight (int width, int sectionCount)
+{
+    const int columns = getPhoneSectionColumns (width);
+    const int rows = juce::jmax (1, (sectionCount + columns - 1) / columns);
+    const int panelHeight = 52 + rows * 52;
+    return 230 + panelHeight;
+}
+
 juce::String gmProgramName (int program)
 {
     static const char* names[] = {
@@ -97,12 +150,46 @@ SmartArrangerAudioProcessorEditor::SmartArrangerAudioProcessorEditor (
     : juce::AudioProcessorEditor (processorToUse), targetProcessor (processorToUse)
 {
     setResizable (true, false);
+#if JUCE_ANDROID
+    setResizeLimits (320, 400, 1600, 2400);
+    setSize (400, getPhoneEditorHeight (400, 0));
+#else
     setResizeLimits (760, 431, 1100, 1200);
     setSize (760, 431);
+#endif
     addAndMakeVisible (loadStyleButton);
     loadStyleButton.onClick = [this] { chooseStyleFile(); };
     loadStyleButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff34291c));
     loadStyleButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffffe6b2));
+
+    tempoRateCaption.setText ("TEMPO", juce::dontSendNotification);
+    tempoRateCaption.setJustificationType (juce::Justification::centred);
+    tempoRateCaption.setColour (juce::Label::textColourId, muted);
+    tempoRateCaption.setFont (juce::Font (10.0f, juce::Font::bold));
+    addAndMakeVisible (tempoRateCaption);
+    tempoRateValue.setJustificationType (juce::Justification::centred);
+    tempoRateValue.setColour (juce::Label::textColourId, juce::Colour (0xffffe6b2));
+    tempoRateValue.setFont (juce::Font (11.0f, juce::Font::bold));
+    tempoRateValue.setText ("100%", juce::dontSendNotification);
+    addAndMakeVisible (tempoRateValue);
+    tempoRateSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    tempoRateSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    tempoRateSlider.setRange (0.5, 2.0, 0.01);
+    tempoRateSlider.setValue (targetProcessor.getTempoRate(), juce::dontSendNotification);
+    tempoRateSlider.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
+                                         juce::MathConstants<float>::pi * 2.75f, true);
+    tempoRateSlider.setColour (juce::Slider::rotarySliderFillColourId, gold);
+    tempoRateSlider.setColour (juce::Slider::rotarySliderOutlineColourId, panel.brighter (0.7f));
+    tempoRateSlider.setColour (juce::Slider::thumbColourId, juce::Colour (0xffffe6b2));
+    tempoRateSlider.setTooltip ("Playback tempo multiplier; 100% follows the style or host tempo.");
+    tempoRateSlider.onValueChange = [this]
+    {
+        const auto rate = (float) tempoRateSlider.getValue();
+        targetProcessor.setTempoRate (rate);
+        tempoRateValue.setText (juce::String (juce::roundToInt (rate * 100.0f)) + "%",
+                                juce::dontSendNotification);
+    };
+    addAndMakeVisible (tempoRateSlider);
 
     addAndMakeVisible (accompanimentButton);
     accompanimentButton.setClickingTogglesState (true);
@@ -124,9 +211,53 @@ SmartArrangerAudioProcessorEditor::SmartArrangerAudioProcessorEditor (
 
 void SmartArrangerAudioProcessorEditor::resized()
 {
+#if JUCE_ANDROID
+    if (usesPhoneLayout (getWidth()))
+    {
+        const int desiredHeight = getPhoneEditorHeight (getWidth(), sectionButtons.size());
+        if (getHeight() != desiredHeight)
+            setSize (getWidth(), desiredHeight);
+        auto bounds = getLocalBounds().reduced (12);
+        auto header = bounds.removeFromTop (42);
+        loadStyleButton.setBounds (header.removeFromRight (136).reduced (0, 2));
+        tempoRateCaption.setVisible (false);
+        tempoRateValue.setVisible (false);
+        tempoRateSlider.setVisible (false);
+        accompanimentButton.setBounds ({ });
+        const int cardTop = 54;
+        auto styleCard = juce::Rectangle<int> (bounds.getX(), cardTop, bounds.getWidth(), 72);
+        const int sectionTop = styleCard.getBottom() + 10;
+        const int columns = getPhoneSectionColumns (getWidth());
+        const int gap = 8;
+        const int gridWidth = bounds.getWidth() - 20;
+        const int cellWidth = (gridWidth - gap * (columns - 1)) / columns;
+        const int gridTop = sectionTop + 48;
+        for (int i = 0; i < sectionButtons.size(); ++i)
+        {
+            const int row = i / columns;
+            const int column = i % columns;
+            sectionButtons[i]->setBounds (bounds.getX() + 10 + column * (cellWidth + gap),
+                                           gridTop + row * 52, cellWidth, 44);
+        }
+        const int sectionRows = juce::jmax (1, (sectionButtons.size() + columns - 1) / columns);
+        const int panelHeight = 52 + sectionRows * 52;
+        const int chordTop = sectionTop + panelHeight + 10;
+        accompanimentButton.setBounds (bounds.getRight() - 142, sectionTop + 6, 130, 36);
+        return;
+    }
+#endif
     auto area = getLocalBounds().reduced (22);
     auto header = area.removeFromTop (54);
     loadStyleButton.setBounds (header.removeFromRight (174).reduced (0, 6));
+    tempoRateCaption.setVisible (true);
+    tempoRateValue.setVisible (true);
+    tempoRateSlider.setVisible (true);
+    // Keep the speed control beside the style BPM readout. The style summary
+    // card reserves a narrow right column for it, leaving the metadata below
+    // available for the full list of style parts.
+    tempoRateCaption.setBounds (getWidth() - 122, 80, 92, 13);
+    tempoRateValue.setBounds (getWidth() - 122, 94, 92, 15);
+    tempoRateSlider.setBounds (getWidth() - 108, 108, 64, 62);
 
     const int columns = 4;
     const int gap = 9;
@@ -159,6 +290,81 @@ void SmartArrangerAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (gold.withAlpha (0.18f));
     g.drawRoundedRectangle (bounds.reduced (4).toFloat(), 13.0f, 0.7f);
 
+#if JUCE_ANDROID
+    if (usesPhoneLayout (getWidth()))
+    {
+        const auto content = getLocalBounds().reduced (12);
+        g.setColour (gold);
+        g.setFont (juce::Font (21.0f, juce::Font::bold));
+        g.drawText ("STYLE SELECTION", content.getX() + 4, 15,
+                    juce::jmax (100, content.getWidth() - 150), 34,
+                    juce::Justification::centredLeft);
+
+        const auto styleCard = juce::Rectangle<int> (content.getX(), 54, content.getWidth(), 72);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff242a30), styleCard.getX(), styleCard.getY(),
+                                                 juce::Colour (0xff11171d), styleCard.getX(), styleCard.getBottom(), false));
+        g.fillRoundedRectangle (styleCard.toFloat(), 10.0f);
+        g.setColour (gold.withAlpha (0.48f));
+        g.drawRoundedRectangle (styleCard.toFloat(), 10.0f, 1.2f);
+        g.setColour (juce::Colour (0xfff2f7fb));
+        g.setFont (juce::Font (16.0f, juce::Font::bold));
+        g.drawFittedText (styleTitle, styleCard.getX() + 12, styleCard.getY() + 7,
+                          styleCard.getWidth() - 24, 25, juce::Justification::centredLeft, 1);
+        g.setColour (muted);
+        g.setFont (juce::Font (12.0f));
+        g.drawFittedText (styleSummary + "   " + styleDetails,
+                          styleCard.getX() + 12, styleCard.getY() + 37,
+                          styleCard.getWidth() - 24, 25, juce::Justification::centredLeft, 1);
+
+        const int sectionTop = styleCard.getBottom() + 10;
+        const int columns = getPhoneSectionColumns (getWidth());
+        const int rows = juce::jmax (1, (sectionButtons.size() + columns - 1) / columns);
+        const int sectionHeight = 52 + rows * 52;
+        const auto sectionPanel = juce::Rectangle<int> (content.getX(), sectionTop,
+                                                         content.getWidth(), sectionHeight);
+        g.setColour (juce::Colour (0xff151b21));
+        g.fillRoundedRectangle (sectionPanel.toFloat(), 11.0f);
+        g.setColour (gold.withAlpha (0.43f));
+        g.drawRoundedRectangle (sectionPanel.toFloat(), 11.0f, 1.1f);
+        g.setColour (gold);
+        g.setFont (juce::Font (12.0f, juce::Font::bold));
+        g.drawText ("STYLE SECTIONS", sectionPanel.getX() + 12, sectionPanel.getY() + 10,
+                    juce::jmax (100, sectionPanel.getWidth() - 170), 30,
+                    juce::Justification::centredLeft);
+        if (sectionButtons.isEmpty())
+        {
+            g.setColour (muted);
+            g.setFont (juce::Font (13.0f));
+            g.drawFittedText (styleError.isEmpty() ? "Load a style to show its sections." : styleError,
+                              sectionPanel.reduced (12).withTrimmedTop (40),
+                              juce::Justification::centred, 2);
+        }
+
+        const int chordTop = sectionPanel.getBottom() + 10;
+        const auto chordCard = juce::Rectangle<int> (content.getX(), chordTop, content.getWidth(), 72);
+        g.setColour (juce::Colour (0xff151b21));
+        g.fillRoundedRectangle (chordCard.toFloat(), 11.0f);
+        g.setColour (gold.withAlpha (0.43f));
+        g.drawRoundedRectangle (chordCard.toFloat(), 11.0f, 1.1f);
+        g.setColour (gold);
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.drawText ("LIVE CHORD", chordCard.getX() + 12, chordCard.getY() + 7, 110, 18,
+                    juce::Justification::centredLeft);
+        g.setColour (juce::Colour (0xfff1f6fa));
+        g.setFont (juce::Font (27.0f, juce::Font::bold));
+        g.drawText (getChordLabel (targetProcessor.getDetectedChordRoot(),
+                                   targetProcessor.getDetectedChordQuality()),
+                    chordCard.getX() + 12, chordCard.getY() + 25, 110, 34,
+                    juce::Justification::centredLeft);
+        g.setColour (muted);
+        g.setFont (juce::Font (11.0f));
+        g.drawFittedText ("Chord input controls the accompaniment",
+                          chordCard.getX() + 130, chordCard.getY() + 20,
+                          chordCard.getWidth() - 142, 34, juce::Justification::centredLeft, 1);
+        return;
+    }
+#endif
+
     g.setColour (gold);
     g.setFont (juce::Font (22.0f, juce::Font::bold));
     g.drawText ("STYLE SELECTION", 28, 17, 270, 34, juce::Justification::centredLeft);
@@ -185,18 +391,18 @@ void SmartArrangerAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawRoundedRectangle (styleCard.toFloat(), 12.0f, 1.2f);
     g.setColour (juce::Colour (0xfff2f7fb));
     g.setFont (juce::Font (19.0f, juce::Font::bold));
-    g.drawText (styleSummary, 42, 86, getWidth() - 250, 30,
+    g.drawText (styleSummary, 42, 86, getWidth() - 190, 30,
                 juce::Justification::centredLeft, true);
     g.setColour (styleError.isEmpty() ? muted : juce::Colour (0xffff8c83));
     g.setFont (juce::Font (12.0f));
     g.drawText (styleError.isNotEmpty() ? styleError : styleDetails,
-                42, 116, getWidth() - 84, 17, juce::Justification::centredLeft, true);
+                42, 116, getWidth() - 150, 17, juce::Justification::centredLeft, true);
     if (styleError.isEmpty() && ! channelDetails.isEmpty())
     {
         g.setColour (muted);
         constexpr int columns = 5;
         constexpr int rowHeight = 15;
-        const int columnWidth = (getWidth() - 84) / columns;
+        const int columnWidth = (getWidth() - 164) / columns;
         g.setFont (juce::Font (11.0f));
         for (int i = 0; i < channelDetails.size(); ++i)
         {
@@ -248,15 +454,30 @@ void SmartArrangerAudioProcessorEditor::paint (juce::Graphics& g)
 
 void SmartArrangerAudioProcessorEditor::chooseStyleFile()
 {
+#if JUCE_ANDROID
+    juce::FileChooser::registerCustomMimeTypeForFileExtension ("application/octet-stream", ".sty");
+    juce::FileChooser::registerCustomMimeTypeForFileExtension ("application/octet-stream", ".prs");
+    // Android's document providers commonly report Yamaha style files with
+    // provider-specific/unknown MIME types. SAF filters by MIME, not by the
+    // filename wildcard, so a *.sty filter can leave valid files disabled.
+    // Allow selection of any document here; loadStyleFile validates the data.
+    constexpr auto chooserWildcard = "*";
+#else
+    constexpr auto chooserWildcard = "*.sty;*.STY;*.prs;*.PRS;*.bcs;*.BCS;*.sst;*.SST;*.scp;*.SCP;*.fps;*.FPS;*.aus;*.AUS";
+#endif
     fileChooser = std::make_unique<juce::FileChooser> ("Choose a Yamaha Style file",
-        juce::File(), "*.sty;*.STY;*.prs;*.PRS;*.bcs;*.BCS;*.sst;*.SST;*.scp;*.SCP;*.fps;*.FPS;*.aus;*.AUS");
+        juce::File(), chooserWildcard);
     juce::Component::SafePointer<SmartArrangerAudioProcessorEditor> safeThis (this);
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode
                                   | juce::FileBrowserComponent::canSelectFiles,
                               [safeThis] (const juce::FileChooser& chooser)
                               {
-                                  if (safeThis != nullptr && chooser.getResult().existsAsFile())
-                                      safeThis->loadStyleFile (chooser.getResult());
+                                  if (safeThis != nullptr)
+                                  {
+                                      const auto file = copyPickedUrlToLocalFile (chooser.getURLResult(), ".sty");
+                                      if (file.existsAsFile())
+                                          safeThis->loadStyleFile (file);
+                                  }
                               });
 }
 
@@ -308,7 +529,12 @@ void SmartArrangerAudioProcessorEditor::loadStyleFile (const juce::File& file)
     // JUCE 9 removed Font::getStringWidth; estimate typical bold glyph width at 13 pt.
     // The editor width then grows with the title, up to the resizable window limit.
     const int titleWidth = styleTitle.length() * 8;
+#if JUCE_ANDROID
+    if (! usesPhoneLayout (getWidth()))
+        setSize (juce::jlimit (760, 1100, 518 + titleWidth + 32), getHeight());
+#else
     setSize (juce::jlimit (760, 1100, 518 + titleWidth + 32), getHeight());
+#endif
     styleSummary = loadedStyleInfo.format + " | "
                  + juce::String (loadedStyleInfo.tempo) + " BPM | "
                  + juce::String (loadedStyleInfo.numerator) + "/" + juce::String (loadedStyleInfo.denominator);
@@ -405,7 +631,14 @@ void SmartArrangerAudioProcessorEditor::rebuildSectionButtons (int selectedIndex
         addAndMakeVisible (button);
     }
     const int panelHeight = getSectionPanelHeight (sectionButtons.size());
+#if JUCE_ANDROID
+    if (usesPhoneLayout (getWidth()))
+        setSize (getWidth(), getPhoneEditorHeight (getWidth(), sectionButtons.size()));
+    else
+        setSize (getWidth(), 317 + panelHeight);
+#else
     setSize (getWidth(), 317 + panelHeight);
+#endif
     resized();
 }
 

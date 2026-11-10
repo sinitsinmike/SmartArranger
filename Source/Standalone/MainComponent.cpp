@@ -10,6 +10,32 @@
 
 namespace
 {
+juce::File copyAndroidPickedUrl (const juce::URL& url, const juce::String& fallbackExtension)
+{
+#if JUCE_ANDROID
+    auto document = juce::AndroidDocument::fromDocument (url);
+    if (! document || ! document.getInfo().canRead())
+        return {};
+    auto stream = document.createInputStream();
+    if (stream == nullptr)
+        return {};
+    juce::MemoryBlock data;
+    if (stream->readIntoMemoryBlock (data) <= 0 || data.isEmpty())
+        return {};
+    auto extension = juce::File (document.getInfo().getName()).getFileExtension();
+    if (extension.isEmpty())
+        extension = fallbackExtension;
+    const auto destination = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                .getChildFile ("SmartArranger-" + juce::String (juce::Time::getMillisecondCounter()) + extension);
+    return destination.replaceWithData (data.getData(), data.getSize()) ? destination : juce::File();
+#else
+    return url.getLocalFile();
+#endif
+}
+}
+
+namespace
+{
 const juce::Colour gold (0xffffc45a);
 const juce::Colour muted (0xffc2c9d1);
 const juce::Colour darkPanel (0xff0d141c);
@@ -24,10 +50,16 @@ class SoundFontSettingsPanel final : public juce::Component
 {
 public:
     SoundFontSettingsPanel (bool enabled, bool shouldRememberStyle, int splitPointMidiNote, juce::String path,
+                            const juce::StringArray& inputNames, int selectedInput,
+                            const juce::StringArray& outputNames, int selectedOutput, bool thruEnabled,
                             std::function<void(bool)> onEnabledChanged,
                             std::function<void(bool)> onRememberStyleChanged,
                             std::function<void(int)> onSplitPointChanged,
-                            std::function<void()> onChoose)
+                            std::function<void()> onChoose,
+                            std::function<void(int)> onInputChanged,
+                            std::function<void(int)> onOutputChanged,
+                            std::function<void(bool)> onThruChanged,
+                            std::function<void()> onRefreshMidi)
         : enabledChanged (std::move (onEnabledChanged)),
           rememberStyleChanged (std::move (onRememberStyleChanged)),
           splitPointChanged (std::move (onSplitPointChanged)),
@@ -37,6 +69,15 @@ public:
         heading.setText ("Playback and Startup", juce::dontSendNotification);
         heading.setFont (juce::Font (17.0f, juce::Font::bold));
         addAndMakeVisible (heading);
+#if JUCE_ANDROID
+        doneButton.setButtonText ("DONE");
+        doneButton.onClick = [this]
+        {
+            if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>())
+                dialog->exitModalState (0);
+        };
+        addAndMakeVisible (doneButton);
+#endif
         enable.setButtonText ("Enable internal SF2 playback");
         enable.setToggleState (enabled, juce::dontSendNotification);
         enable.onClick = [this] { enabledChanged (enable.getToggleState()); };
@@ -87,7 +128,64 @@ public:
         help.setFont (juce::Font (12.0f));
         help.setJustificationType (juce::Justification::topLeft);
         addAndMakeVisible (help);
+#if JUCE_ANDROID
+        midiHeading.setText ("MIDI Devices", juce::dontSendNotification);
+        midiHeading.setFont (juce::Font (17.0f, juce::Font::bold));
+        addAndMakeVisible (midiHeading);
+        inputLabel.setText ("MIDI In", juce::dontSendNotification);
+        addAndMakeVisible (inputLabel);
+        for (int i = 0; i < inputNames.size(); ++i)
+            inputSelector.addItem (inputNames[i], i + 1);
+        inputSelector.setSelectedId (selectedInput, juce::dontSendNotification);
+        inputSelector.onChange = [onInputChanged, this]
+        {
+            if (onInputChanged) onInputChanged (inputSelector.getSelectedId());
+        };
+        addAndMakeVisible (inputSelector);
+        outputLabel.setText ("MIDI Out", juce::dontSendNotification);
+        addAndMakeVisible (outputLabel);
+        for (int i = 0; i < outputNames.size(); ++i)
+            outputSelector.addItem (outputNames[i], i + 1);
+        outputSelector.setSelectedId (selectedOutput, juce::dontSendNotification);
+        outputSelector.onChange = [onOutputChanged, this]
+        {
+            if (onOutputChanged) onOutputChanged (outputSelector.getSelectedId());
+        };
+        addAndMakeVisible (outputSelector);
+        midiThru.setButtonText ("MIDI Thru");
+        midiThru.setToggleState (thruEnabled, juce::dontSendNotification);
+        midiThru.onClick = [onThruChanged, this]
+        {
+            if (onThruChanged) onThruChanged (midiThru.getToggleState());
+        };
+        addAndMakeVisible (midiThru);
+        refreshMidiButton.setButtonText ("Refresh MIDI devices");
+        refreshMidiButton.onClick = [onRefreshMidi] { if (onRefreshMidi) onRefreshMidi(); };
+        addAndMakeVisible (refreshMidiButton);
+        bluetoothButton.setButtonText ("Pair Bluetooth MIDI");
+        bluetoothButton.setEnabled (juce::BluetoothMidiDevicePairingDialogue::isAvailable());
+        bluetoothButton.onClick = []
+        {
+            auto openPairing = []
+            {
+                if (juce::RuntimePermissions::isGranted (juce::RuntimePermissions::bluetoothMidi))
+                    juce::BluetoothMidiDevicePairingDialogue::open();
+                else
+                    juce::RuntimePermissions::request (juce::RuntimePermissions::bluetoothMidi, [] (auto)
+                    {
+                        if (juce::RuntimePermissions::isGranted (juce::RuntimePermissions::bluetoothMidi))
+                            juce::BluetoothMidiDevicePairingDialogue::open();
+                    });
+            };
+            openPairing();
+        };
+        addAndMakeVisible (bluetoothButton);
+        setSize (360, 570);
+#else
+        juce::ignoreUnused (inputNames, selectedInput, outputNames, selectedOutput, thruEnabled,
+                            onInputChanged, onOutputChanged, onThruChanged, onRefreshMidi);
         setSize (500, 300);
+#endif
     }
 
     void setSoundFontPath (const juce::String& path)
@@ -100,9 +198,62 @@ public:
         help.setText (text, juce::dontSendNotification);
     }
 
+    void updateMidiDevices (const juce::StringArray& inputNames, int selectedInput,
+                            const juce::StringArray& outputNames, int selectedOutput)
+    {
+#if JUCE_ANDROID
+        inputSelector.clear (juce::dontSendNotification);
+        for (int i = 0; i < inputNames.size(); ++i)
+            inputSelector.addItem (inputNames[i], i + 1);
+        inputSelector.setSelectedId (selectedInput, juce::dontSendNotification);
+        outputSelector.clear (juce::dontSendNotification);
+        for (int i = 0; i < outputNames.size(); ++i)
+            outputSelector.addItem (outputNames[i], i + 1);
+        outputSelector.setSelectedId (selectedOutput, juce::dontSendNotification);
+#else
+        juce::ignoreUnused (inputNames, selectedInput, outputNames, selectedOutput);
+#endif
+    }
+
     void resized() override
     {
         auto b = getLocalBounds().reduced (18);
+#if JUCE_ANDROID
+        auto headingRow = b.removeFromTop (30);
+        heading.setBounds (headingRow.removeFromLeft (220));
+        doneButton.setBounds (headingRow.removeFromRight (76));
+        b.removeFromTop (4);
+        enable.setBounds (b.removeFromTop (28));
+        b.removeFromTop (4);
+        rememberStyle.setBounds (b.removeFromTop (28));
+        b.removeFromTop (6);
+        splitLabel.setBounds (b.removeFromTop (20));
+        splitPointSelector.setBounds (b.removeFromTop (32));
+        b.removeFromTop (2);
+        splitHelp.setBounds (b.removeFromTop (32));
+        b.removeFromTop (4);
+        chooseButton.setBounds (b.removeFromTop (36));
+        b.removeFromTop (3);
+        soundFont.setBounds (b.removeFromTop (32));
+        b.removeFromTop (3);
+        help.setBounds (b.removeFromTop (34));
+        b.removeFromTop (5);
+        midiHeading.setBounds (b.removeFromTop (24));
+        b.removeFromTop (3);
+        auto inputRow = b.removeFromTop (34);
+        inputLabel.setBounds (inputRow.removeFromLeft (74));
+        inputSelector.setBounds (inputRow);
+        b.removeFromTop (3);
+        auto outputRow = b.removeFromTop (34);
+        outputLabel.setBounds (outputRow.removeFromLeft (74));
+        outputSelector.setBounds (outputRow);
+        midiThru.setBounds (b.removeFromTop (28));
+        b.removeFromTop (3);
+        auto midiButtons = b.removeFromTop (34);
+        refreshMidiButton.setBounds (midiButtons.removeFromLeft (148));
+        midiButtons.removeFromLeft (6);
+        bluetoothButton.setBounds (midiButtons);
+#else
         heading.setBounds (b.removeFromTop (26));
         b.removeFromTop (8);
         enable.setBounds (b.removeFromTop (28));
@@ -120,11 +271,18 @@ public:
         soundFont.setBounds (b.removeFromTop (25));
         b.removeFromTop (6);
         help.setBounds (b);
+#endif
     }
 
 private:
     juce::Label heading, splitLabel, splitHelp, soundFont, help;
     juce::ToggleButton enable, rememberStyle;
+#if JUCE_ANDROID
+    juce::Label midiHeading, inputLabel, outputLabel;
+    juce::ComboBox inputSelector, outputSelector;
+    juce::ToggleButton midiThru;
+    juce::TextButton doneButton, refreshMidiButton, bluetoothButton;
+#endif
     juce::ComboBox splitPointSelector;
     int splitPointNote = 36;
     juce::TextButton chooseButton;
@@ -234,6 +392,47 @@ void styleTextButton (juce::TextButton& button)
     button.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffffdf9b));
     button.setColour (juce::ComboBox::outlineColourId, gold.withAlpha (0.65f));
 }
+
+struct SoundFontPresetResolution
+{
+    const SmartArrangerSoundFontPreset* preset = nullptr;
+    bool fallback = false;
+    bool percussionMapping = false;
+};
+
+SoundFontPresetResolution resolveSoundFontPreset (
+    const std::vector<SmartArrangerSoundFontPreset>& presets,
+    int requestedBank, int requestedProgram, bool percussionChannel)
+{
+    const auto find = [&] (int bank, int program) -> const SmartArrangerSoundFontPreset*
+    {
+        for (const auto& preset : presets)
+            if (preset.bank == bank && preset.program == program)
+                return &preset;
+        return nullptr;
+    };
+
+    const int bankMsb = requestedBank / 128;
+    const bool xgDrumBank = bankMsb == 127;
+    const bool defaultGmPercussion = percussionChannel && requestedBank == 0;
+    if (defaultGmPercussion || xgDrumBank)
+    {
+        const int drumBanks[] = { xgDrumBank ? 127 : 128,
+                                  xgDrumBank ? 128 : 127 };
+        for (const int drumBank : drumBanks)
+            for (const int drumProgram : { requestedProgram, 0 })
+                if (const auto* preset = find (drumBank, drumProgram))
+                    return { preset,
+                             drumBank != requestedBank || drumProgram != requestedProgram,
+                             true };
+    }
+
+    if (const auto* preset = find (requestedBank, requestedProgram))
+        return { preset, false, false };
+    if (const auto* preset = find (0, requestedProgram))
+        return { preset, requestedBank != 0, false };
+    return {};
+}
 }
 
 SmartArrangerStandaloneComponent::SmartArrangerStandaloneComponent()
@@ -257,6 +456,14 @@ SmartArrangerStandaloneComponent::SmartArrangerStandaloneComponent()
     showStyleParts = settingsFile->getBoolValue ("viewShowStyleParts", true);
     showMidiActivity = settingsFile->getBoolValue ("viewShowMidiActivity", true);
     showArranger = settingsFile->getBoolValue ("viewShowArranger", true);
+#if JUCE_ANDROID
+    // The Android screen is always the performance layout. Device routing is
+    // available from Settings; the instrument list is intentionally omitted.
+    showMidiControls = false;
+    showStyleParts = false;
+    showMidiActivity = true;
+    showArranger = true;
+#endif
 
     setAudioChannels (0, 2);
     if (auto* deviceType = deviceManager.getCurrentDeviceTypeObject())
@@ -331,6 +538,12 @@ SmartArrangerStandaloneComponent::SmartArrangerStandaloneComponent()
     styleTextButton (panicButton);
     panicButton.onClick = [this] { sendAllNotesOff(); };
     addAndMakeVisible (panicButton);
+#if JUCE_ANDROID
+    settingsButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff262b30));
+    settingsButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffffdf9b));
+    settingsButton.onClick = [this] { showSettings(); };
+    addAndMakeVisible (settingsButton);
+#endif
 
     partsHeader.setText ("STYLE PARTS - MIDI CHANNEL AND INSTRUMENT", juce::dontSendNotification);
     partsHeader.setColour (juce::Label::textColourId, gold);
@@ -348,7 +561,11 @@ SmartArrangerStandaloneComponent::SmartArrangerStandaloneComponent()
     partsList.setText ("Load a Yamaha style in the arranger window to see its MIDI parts here.");
     addAndMakeVisible (partsList);
 
+#if JUCE_ANDROID
+    activityHeader.setText ("MIDI CHANNELS - tap to mute/unmute", juce::dontSendNotification);
+#else
     activityHeader.setText ("MIDI OUT ACTIVITY - click a channel to mute or unmute", juce::dontSendNotification);
+#endif
     activityHeader.setColour (juce::Label::textColourId, gold);
     activityHeader.setFont (juce::Font (12.0f, juce::Font::bold));
     addAndMakeVisible (activityHeader);
@@ -551,6 +768,23 @@ void SmartArrangerStandaloneComponent::paint (juce::Graphics& g)
     g.fillRoundedRectangle (getLocalBounds().reduced (18).toFloat(), 13.0f);
     g.setColour (gold.withAlpha (0.55f));
     g.drawRoundedRectangle (getLocalBounds().reduced (18).toFloat(), 13.0f, 1.0f);
+#if JUCE_ANDROID
+    const bool compactTitle = getWidth() < 380;
+    const int portraitTopInset = getHeight() > getWidth() ? 26 : 0;
+    const int titleFont = compactTitle ? 17 : 21;
+    const int smartWidth = compactTitle ? 68 : 94;
+    const int arrangerX = compactTitle ? 96 : 120;
+    g.setColour (juce::Colour (0xfff3f6f9));
+    g.setFont (juce::Font ((float) titleFont, juce::Font::bold));
+    g.drawText ("SMART", 22, 19 + portraitTopInset, smartWidth, 34, juce::Justification::centredLeft);
+    g.setColour (gold);
+    g.drawFittedText ("ARRANGER", arrangerX, 19 + portraitTopInset,
+                      juce::jmax (80, getWidth() - arrangerX - 138), 34,
+                      juce::Justification::centredLeft, 1);
+    g.setColour (muted.withAlpha (0.18f));
+    for (int y = 91 + portraitTopInset; y < 111 + portraitTopInset; y += 4)
+        g.drawHorizontalLine (y, 24.0f, (float) getWidth() - 24.0f);
+#else
     g.setColour (juce::Colour (0xfff3f6f9));
     g.setFont (juce::Font (27.0f, juce::Font::bold));
     g.drawText ("SMART", 38, 22, 130, 42, juce::Justification::centredLeft);
@@ -559,10 +793,52 @@ void SmartArrangerStandaloneComponent::paint (juce::Graphics& g)
     g.setColour (muted.withAlpha (0.18f));
     for (int y = 118; y < 138; y += 4)
         g.drawHorizontalLine (y, 32.0f, (float) getWidth() - 32.0f);
+#endif
 }
 
 void SmartArrangerStandaloneComponent::resized()
 {
+#if JUCE_ANDROID
+    auto bounds = getLocalBounds().reduced (14);
+    // Android draws the app edge-to-edge on several devices. Keep the header
+    // and Settings button below the status icons in portrait; landscape has
+    // enough horizontal room and its system bars do not overlap these controls.
+    if (getHeight() > getWidth())
+        bounds.removeFromTop (26);
+    auto titleRow = bounds.removeFromTop (52);
+    settingsButton.setBounds (titleRow.removeFromRight (112).reduced (0, 5));
+    auto activityArea = bounds.removeFromTop (showMidiActivity ? 24 : 0);
+    activityHeader.setBounds (activityArea);
+    const int columns = getWidth() < getHeight()
+        ? (getWidth() < 400 ? 4 : 8)
+        : (getWidth() >= 740 ? 16 : 8);
+    const int rows = (16 + columns - 1) / columns;
+    const int gridHeight = rows * 39;
+    auto grid = bounds.removeFromTop (gridHeight);
+    const int cellWidth = grid.getWidth() / columns;
+    for (int channel = 0; channel < 16; ++channel)
+    {
+        const int row = channel / columns;
+        const int column = channel % columns;
+        auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
+                                           grid.getY() + row * 39,
+                                           cellWidth - 4, 25);
+        const int buttonWidth = cell.getWidth() * 2 / 3;
+        channelButtons[(size_t) channel].setBounds (cell.withWidth (buttonWidth)
+                                                        .withX (cell.getX() + (cell.getWidth() - buttonWidth) / 2));
+        channelCounters[(size_t) channel].setBounds (cell.withY (cell.getBottom()).withHeight (13));
+    }
+    bounds.removeFromTop (8);
+    arrangerViewport.setBounds (bounds);
+    if (editor != nullptr)
+        editor->setBounds (0, 0, arrangerViewport.getWidth(), juce::jmax (editor->getHeight(), 400));
+    inputLabel.setBounds ({ }); inputSelector.setBounds ({ }); midiInLamp.setBounds ({ });
+    midiInActivity.setBounds ({ }); midiThruButton.setBounds ({ }); midiThruLamp.setBounds ({ });
+    outputLabel.setBounds ({ }); outputSelector.setBounds ({ }); midiOutLamp.setBounds ({ });
+    midiOutActivity.setBounds ({ }); outputStatus.setBounds ({ }); panicButton.setBounds ({ });
+    partsHeader.setBounds ({ }); partsList.setBounds ({ });
+    return;
+#endif
     if (showArranger && editor != nullptr && editor->getHeight() > 0)
         preferredArrangerHeight = editor->getHeight();
 
@@ -767,11 +1043,18 @@ void SmartArrangerStandaloneComponent::followSystemDefaultAudioOutput()
 void SmartArrangerStandaloneComponent::showSettings()
 {
     auto panelSafe = std::make_shared<juce::Component::SafePointer<SoundFontSettingsPanel>>();
+    juce::StringArray inputNames, outputNames;
+    for (int i = 0; i < inputSelector.getNumItems(); ++i)
+        inputNames.add (inputSelector.getItemText (i));
+    for (int i = 0; i < outputSelector.getNumItems(); ++i)
+        outputNames.add (outputSelector.getItemText (i));
     auto* panel = new SoundFontSettingsPanel (
         internalSoundsEnabled.load (std::memory_order_relaxed),
         settingsFile->getBoolValue ("rememberLastStyle", true),
         keyboardSplitPoint.load (std::memory_order_relaxed),
         settingsFile->getValue ("soundFontPath"),
+        inputNames, inputSelector.getSelectedId(), outputNames, outputSelector.getSelectedId(),
+        midiThruEnabled.load (std::memory_order_relaxed),
         [this, panelSafe] (bool enabled)
         {
             internalSoundsEnabled.store (enabled, std::memory_order_relaxed);
@@ -797,13 +1080,16 @@ void SmartArrangerStandaloneComponent::showSettings()
         },
         [this, panelSafe]
         {
+#if JUCE_ANDROID
+            juce::FileChooser::registerCustomMimeTypeForFileExtension ("application/octet-stream", ".sf2");
+#endif
             soundFontChooser = std::make_unique<juce::FileChooser> (
                 "Choose a GM-compatible SoundFont", juce::File(), "*.sf2;*.SF2");
             soundFontChooser->launchAsync (juce::FileBrowserComponent::openMode
                 | juce::FileBrowserComponent::canSelectFiles,
                 [this, panelSafe] (const juce::FileChooser& chooser)
                 {
-                    const auto file = chooser.getResult();
+                    const auto file = copyAndroidPickedUrl (chooser.getURLResult(), ".sf2");
                     if (file.existsAsFile() && file.hasFileExtension ("sf2"))
                     {
                         settingsFile->setValue ("soundFontPath", file.getFullPathName());
@@ -816,6 +1102,31 @@ void SmartArrangerStandaloneComponent::showSettings()
                         loadSoundFont (file);
                     }
                 });
+        },
+        [this] (int itemId) { selectInput (itemId); },
+        [this] (int itemId) { selectOutput (itemId); },
+        [this] (bool enabled)
+        {
+            midiThruEnabled.store (enabled, std::memory_order_relaxed);
+            processor.setMidiThruEnabled (enabled);
+            midiThruButton.setToggleState (enabled, juce::dontSendNotification);
+            midiThruButton.setButtonText (enabled ? "MIDI THRU ON" : "MIDI THRU OFF");
+        },
+        [this, panelSafe]
+        {
+            refreshInputs();
+            refreshOutputs();
+            juce::StringArray refreshedInputs, refreshedOutputs;
+            for (int i = 0; i < inputSelector.getNumItems(); ++i)
+                refreshedInputs.add (inputSelector.getItemText (i));
+            for (int i = 0; i < outputSelector.getNumItems(); ++i)
+                refreshedOutputs.add (outputSelector.getItemText (i));
+            if (auto* settings = panelSafe->getComponent())
+            {
+                settings->updateMidiDevices (refreshedInputs, inputSelector.getSelectedId(),
+                                             refreshedOutputs, outputSelector.getSelectedId());
+                settings->setStatus ("MIDI device list refreshed.");
+            }
         });
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Smart Arranger Settings";
@@ -826,7 +1137,23 @@ void SmartArrangerStandaloneComponent::showSettings()
     options.componentToCentreAround = this;
     options.useNativeTitleBar = true;
     options.resizable = false;
-    options.launchAsync();
+    auto* dialog = options.launchAsync();
+#if JUCE_ANDROID
+    // Keep the DONE control clear of Android's status-bar icons. JUCE's
+    // Android coordinates are density-independent, so this is roughly 1 cm
+    // down and 3-4 mm to the right on the target phone.
+    if (dialog != nullptr)
+        dialog->setTopLeftPosition (dialog->getX() + 10, dialog->getY() + 28);
+#endif
+}
+
+void SmartArrangerStandaloneComponent::openStyleUrl (const juce::URL& url)
+{
+    const auto file = copyAndroidPickedUrl (url, ".sty");
+    if (! file.existsAsFile())
+        return;
+    if (auto* arranger = dynamic_cast<SmartArrangerAudioProcessorEditor*> (editor.get()))
+        arranger->loadStyleFile (file);
 }
 
 bool SmartArrangerStandaloneComponent::isViewSectionVisible (int sectionId) const
@@ -1080,7 +1407,7 @@ void SmartArrangerStandaloneComponent::renderInternalSound (const juce::AudioSou
                     if (preset >= 0)
                     {
                         resolvedBank = drumBank;
-                        usedFallback = true;
+                        usedFallback = drumBank != bank;
                         break;
                     }
                 }
@@ -1093,7 +1420,7 @@ void SmartArrangerStandaloneComponent::renderInternalSound (const juce::AudioSou
                         if (preset >= 0)
                         {
                             resolvedBank = drumBank;
-                            usedFallback = true;
+                            usedFallback = drumBank != bank || program != 0;
                             break;
                         }
                     }
@@ -1174,7 +1501,24 @@ void SmartArrangerStandaloneComponent::refreshInputs()
     for (int i = 0; i < devices.size(); ++i)
         if (! devices[i].name.containsIgnoreCase ("Smart Arranger MIDI Out"))
             inputSelector.addItem (devices[i].name, itemId++);
-    inputSelector.setSelectedId (1, juce::dontSendNotification);
+    const auto saved = settingsFile->getValue ("midiInputIdentifier", "SMART_ARRANGER_NONE");
+    int selectedId = 1;
+    if (saved.isNotEmpty() && saved != "SMART_ARRANGER_NONE")
+        for (int i = 0; i < devices.size(); ++i)
+            if (! devices[i].name.containsIgnoreCase ("Smart Arranger MIDI Out")
+                && devices[i].identifier == saved)
+            {
+                // Item ids omit the app's own virtual MIDI endpoint.
+                int visibleIndex = 0;
+                for (int j = 0; j < i; ++j)
+                    if (! devices[j].name.containsIgnoreCase ("Smart Arranger MIDI Out"))
+                        ++visibleIndex;
+                selectedId = visibleIndex + 2;
+                break;
+            }
+    inputSelector.setSelectedId (selectedId, juce::dontSendNotification);
+    if (selectedId > 1)
+        selectInput (selectedId);
 }
 
 void SmartArrangerStandaloneComponent::refreshOutputs()
@@ -1215,6 +1559,7 @@ void SmartArrangerStandaloneComponent::selectOutput (int comboId)
             selectedMidiOutput->stopBackgroundThread();
         selectedMidiOutput.reset();
         selectedMidiOutputId = 1;
+        outputSelector.setSelectedId (1, juce::dontSendNotification);
         settingsFile->setValue ("midiOutputIdentifier", "SMART_ARRANGER_VIRTUAL");
         settingsFile->saveIfNeeded();
         outputStatus.setText (midiOutput != nullptr ? "MIDI OUT: Smart Arranger virtual port"
@@ -1243,6 +1588,7 @@ void SmartArrangerStandaloneComponent::selectOutput (int comboId)
         selectedMidiOutput->startBackgroundThread();
         selectedMidiOutputId = comboId;
     }
+    outputSelector.setSelectedId (comboId, juce::dontSendNotification);
     settingsFile->setValue ("midiOutputIdentifier", device.identifier);
     settingsFile->saveIfNeeded();
     outputStatus.setText ("MIDI OUT: " + device.name, juce::dontSendNotification);
@@ -1251,12 +1597,17 @@ void SmartArrangerStandaloneComponent::selectOutput (int comboId)
 
 void SmartArrangerStandaloneComponent::selectInput (int selectedItemId)
 {
+    inputSelector.setSelectedId (selectedItemId, juce::dontSendNotification);
     if (midiInput != nullptr)
         midiInput->stop();
     midiInput.reset();
     const auto devices = juce::MidiInput::getAvailableDevices();
     if (selectedItemId <= 1)
+    {
+        settingsFile->setValue ("midiInputIdentifier", "SMART_ARRANGER_NONE");
+        settingsFile->saveIfNeeded();
         return;
+    }
     int visibleIndex = 0;
     const juce::MidiDeviceInfo* selected = nullptr;
     for (const auto& device : devices)
@@ -1271,6 +1622,8 @@ void SmartArrangerStandaloneComponent::selectInput (int selectedItemId)
     }
     if (selected == nullptr)
         return;
+    settingsFile->setValue ("midiInputIdentifier", selected->identifier);
+    settingsFile->saveIfNeeded();
     midiInput = juce::MidiInput::openDevice (selected->identifier, this);
     if (midiInput != nullptr)
         midiInput->start();
@@ -1289,8 +1642,8 @@ void SmartArrangerStandaloneComponent::updateStyleChannels (const juce::File& fi
         return;
     }
 
-    std::array<int, 16> programs;
-    programs.fill (-1);
+    struct ProgramRequest { int bank = 0; int program = -1; };
+    std::array<std::vector<ProgramRequest>, 16> requests;
     std::array<juce::String, 16> partNames;
     std::array<uint16_t, 16> mappedChannels {};
     for (const auto& segment : style.casmSegments)
@@ -1305,7 +1658,6 @@ void SmartArrangerStandaloneComponent::updateStyleChannels (const juce::File& fi
                         |= static_cast<uint16_t> (1u << record.destinationChannel);
             }
     std::array<int, 16> bankMsb {}, bankLsb {};
-    std::array<int, 16> banks {};
     for (const auto& event : style.events)
     {
         const int source = event.status & 0x0fu;
@@ -1316,102 +1668,91 @@ void SmartArrangerStandaloneComponent::updateStyleChannels (const juce::File& fi
             bankLsb[(size_t) source] = event.data2;
         else if (command == 0xc0u)
         {
-            programs[(size_t) source] = event.data1;
-            banks[(size_t) source] = bankMsb[(size_t) source] * 128 + bankLsb[(size_t) source];
+            const ProgramRequest request { bankMsb[(size_t) source] * 128
+                                            + bankLsb[(size_t) source], event.data1 };
+            auto& channelRequests = requests[(size_t) source];
+            const auto alreadyPresent = std::any_of (channelRequests.begin(), channelRequests.end(),
+                [&] (const ProgramRequest& existing)
+                {
+                    return existing.bank == request.bank && existing.program == request.program;
+                });
+            if (! alreadyPresent)
+                channelRequests.push_back (request);
         }
     }
 
-    juce::StringArray entries;
+    juce::String text;
+    text << "OUTPUT MIDI CHANNEL | STYLE PART | STY REQUEST | SF2 SELECTED\n";
+    text << "--------------------------------------------------------------------------------\n";
+    bool hasEntries = false;
     for (int source = 0; source < 16; ++source)
     {
         if ((style.usedChannels & (1u << source)) == 0)
             continue;
         const auto map = mappedChannels[(size_t) source];
-        int mappedCount = 0;
-        int mappedOutput = source;
+        std::vector<int> outputs;
         for (int destination = 0; destination < 16; ++destination)
             if ((map & (1u << destination)) != 0)
-            {
-                ++mappedCount;
-                mappedOutput = destination;
-            }
-        const int output = mappedCount == 1 ? mappedOutput : source;
+                outputs.push_back (destination);
+        if (outputs.empty())
+            outputs.push_back (source);
         auto part = partNames[(size_t) source];
         if (part.isEmpty()) part = "Unspecified part";
-        auto instrument = juce::String();
-        if (programs[(size_t) source] >= 0)
+        const auto& channelRequests = requests[(size_t) source];
+        if (channelRequests.empty())
         {
-            const auto bank = banks[(size_t) source];
-            const bool defaultGmPercussion = output == 9 && bank == 0;
-            if (defaultGmPercussion)
+            for (const int output : outputs)
             {
-                // Channel 10 is percussion in GM. Some Yamaha styles omit
-                // drum Bank Select and send a nominal PC 1, which must not be
-                // presented as a Piano preset just because bank 0 has one.
-                for (const int drumBank : { 128, 127 })
+                text << "MIDI " << (output + 1) << " | " << part
+                     << " | No Program Change in style | Not specified\n";
+                hasEntries = true;
+            }
+        }
+        for (const auto& request : channelRequests)
+        {
+            const auto pcLabel = juce::String (request.program + 1);
+            auto requestedName = request.bank == 0
+                ? gmProgramName (request.program)
+                : "XG bank/program name unavailable";
+            for (const int output : outputs)
+            {
+                const auto outputRequestedName = output == 9
+                    && (request.bank == 0 || request.bank == 16256)
+                    ? juce::String ("Standard Drum Kit") : requestedName;
+                const auto outputRequested = "Bank " + juce::String (request.bank) + ", PC "
+                    + pcLabel + " (" + outputRequestedName + ")";
+                auto selected = juce::String ("No SF2 bank loaded");
+                if (! soundFontPresets.empty())
                 {
-                    for (const int drumProgram : { programs[(size_t) source], 0 })
+                    const bool manual = manualInstrumentEnabled[(size_t) output].load (
+                        std::memory_order_relaxed);
+                    const int selectedBank = manual
+                        ? manualInstrumentBank[(size_t) output].load (std::memory_order_relaxed)
+                        : request.bank;
+                    const int selectedProgram = manual
+                        ? manualInstrumentProgram[(size_t) output].load (std::memory_order_relaxed)
+                        : request.program;
+                    const auto resolution = resolveSoundFontPreset (soundFontPresets, selectedBank,
+                                                                     selectedProgram, output == 9);
+                    if (resolution.preset != nullptr)
                     {
-                        for (const auto& preset : soundFontPresets)
-                            if (preset.bank == drumBank && preset.program == drumProgram)
-                            {
-                                instrument = preset.name;
-                                break;
-                            }
-                        if (instrument.isNotEmpty())
-                            break;
+                        selected = resolution.preset->name + (manual ? " (manual override)"
+                            : resolution.percussionMapping ? " (drum map)"
+                            : resolution.fallback ? " (fallback)" : " (exact)");
                     }
-                    if (instrument.isNotEmpty())
-                        break;
+                    else
+                        selected = "No matching SF2 preset";
                 }
-                if (instrument.isEmpty())
-                    instrument = "Standard Drum Kit";
+                text << "MIDI " << (output + 1) << " | " << part << " | " << outputRequested
+                     << " | " << selected << "\n";
+                hasEntries = true;
             }
-            else
-                for (const auto& preset : soundFontPresets)
-                    if (preset.bank == bank && preset.program == programs[(size_t) source])
-                    {
-                        instrument = preset.name;
-                        break;
-                    }
-            if (instrument.isEmpty() && bank == 0)
-                instrument = defaultGmPercussion ? "Standard Drum Kit"
-                                                 : gmProgramName (programs[(size_t) source]);
-            if (instrument.isEmpty())
-                instrument = "Bank " + juce::String (bank) + ", PC "
-                    + juce::String (programs[(size_t) source] + 1);
         }
-        else
-            instrument = "Not specified in MIDI data";
-        auto entry = "MIDI " + juce::String (output + 1).paddedLeft (' ', 2)
-            + "  " + part + "  " + instrument;
-        constexpr int columnWidth = 54;
-        if (entry.length() > columnWidth)
-            entry = entry.substring (0, columnWidth - 1) + "…";
-        entries.add (entry);
     }
-    juce::String text ("OUTPUT CHANNEL / STYLE PART / INSTRUMENT\n");
-    text << "------------------------------------------------------------\n";
-    if (entries.isEmpty())
+    if (! hasEntries)
         text << "No channel events were found in this style.\n";
-    else
-    {
-        constexpr int columnWidth = 56;
-        const int columns = juce::jlimit (1, 4, partsList.getWidth() / (columnWidth * 8));
-        const int rows = (entries.size() + columns - 1) / columns;
-        for (int row = 0; row < rows; ++row)
-        {
-            for (int column = 0; column < columns; ++column)
-            {
-                const int index = column * rows + row;
-                if (index < entries.size())
-                    text << entries[index].paddedRight (' ', columnWidth);
-            }
-            text << "\n";
-        }
-    }
-    text << "\nNames use the loaded SF2 bank when its Bank Select + Program Change match;"
-         << " otherwise GM names are shown for bank 0.";
+    text << "\nSTY request uses the bank/program state at each Program Change. PC is shown 1-128."
+         << " SF2 selection follows the loaded bank, including fallback and percussion mapping.";
     text = text.trimEnd();
     partsList.setText (text, juce::dontSendNotification);
 }
@@ -1435,7 +1776,11 @@ void SmartArrangerStandaloneComponent::updateChannelActivity()
         button.setTooltip (juce::String (isMuted ? "Muted" : "Active") + " MIDI channel "
                            + juce::String (channel + 1) + ". Click to "
                            + (isMuted ? "unmute" : "mute")
+#if JUCE_ANDROID
+                           + ". Long-press to assign instrument. Assignment: "
+#else
                            + ". Right-click to assign instrument. Assignment: "
+#endif
                            + (manual ? "manual" : "from style") + ".");
         const int sf2Program = activeSoundFontPrograms[(size_t) channel].load (std::memory_order_relaxed);
         if (sf2Program >= 0)
@@ -1451,7 +1796,11 @@ void SmartArrangerStandaloneComponent::updateChannelActivity()
                 }
         button.setTooltip (juce::String (isMuted ? "Muted" : "Active") + " MIDI channel "
                 + juce::String (channel + 1) + ". Click to " + (isMuted ? "unmute" : "mute")
+#if JUCE_ANDROID
+                + ". Long-press to assign instrument.\nSF2 preset: "
+#else
                 + ". Right-click to assign instrument.\nSF2 preset: "
+#endif
                 + presetName + (manual ? " (manual assignment)" : "")
                 + "\nSoundFont bank " + juce::String (sf2Bank)
                 + (fallback ? " (fallback; requested style bank was unavailable)"

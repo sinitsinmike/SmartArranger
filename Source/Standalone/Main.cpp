@@ -1,5 +1,8 @@
 #include <JuceHeader.h>
 #include "MainComponent.h"
+#if JUCE_ANDROID
+#include <jni.h>
+#endif
 
 class SmartArrangerMenuModel final : public juce::MenuBarModel
 {
@@ -81,8 +84,18 @@ public:
     }
     void systemRequestedQuit() override { quit(); }
 
+    void openStyleUri (const juce::String& uri)
+    {
+        if (window != nullptr)
+            if (auto* component = dynamic_cast<SmartArrangerStandaloneComponent*> (window->getContentComponent()))
+                component->openStyleUrl (juce::URL (uri));
+    }
+
 private:
     class MainWindow final : public juce::DocumentWindow
+#if JUCE_ANDROID
+                                , private juce::Timer
+#endif
     {
     public:
         MainWindow (const juce::String& name,
@@ -100,21 +113,65 @@ private:
             if (onContentCreated)
                 onContentCreated (component);
             setResizable (true, true);
+#if JUCE_ANDROID
+            // The phone layout must use the whole available display in both
+            // orientations. A fixed 400x820 window stays portrait-sized after
+            // rotation on some Android launchers/devices.
+            setResizeLimits (280, 240, 2400, 2400);
+            resizeToDisplayArea();
+#else
             // The MIDI control strip has fixed-width selectors and indicators;
             // keep enough width to prevent those controls and their labels
             // from colliding. Height remains content-driven by the component.
             setResizeLimits (1180, 300, 4000, 3000);
             centreWithSize (1180, 980);
+#endif
             component->refreshContentHeight();
             setVisible (true);
+#if JUCE_ANDROID
+            startTimerHz (4);
+#endif
         }
 
         void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
+
+#if JUCE_ANDROID
+        void timerCallback() override { resizeToDisplayArea(); }
+
+        void resizeToDisplayArea()
+        {
+            if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+            {
+                const auto area = display->userArea;
+                if (area.isEmpty() || getBounds() == area)
+                    return;
+
+                setBounds (area);
+            }
+        }
+#endif
     };
 
     SmartArrangerMenuModel menuModel;
     juce::PopupMenu appleMenuItems;
     std::unique_ptr<MainWindow> window;
 };
+
+#if JUCE_ANDROID
+extern "C" JNIEXPORT void JNICALL
+Java_com_smartarranger_standalone_SmartArrangerActivity_nativeOpenStyle (JNIEnv* env, jobject, jstring uri)
+{
+    const auto* chars = env->GetStringUTFChars (uri, nullptr);
+    const juce::String value (chars != nullptr ? chars : "");
+    if (chars != nullptr)
+        env->ReleaseStringUTFChars (uri, chars);
+
+    juce::MessageManager::callAsync ([value]
+    {
+        if (auto* app = dynamic_cast<SmartArrangerStandaloneApplication*> (juce::JUCEApplication::getInstance()))
+            app->openStyleUri (value);
+    });
+}
+#endif
 
 START_JUCE_APPLICATION (SmartArrangerStandaloneApplication)

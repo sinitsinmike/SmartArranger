@@ -33,6 +33,9 @@ private:
 };
 
 class ChannelMuteButton final : public juce::TextButton
+#if JUCE_ANDROID
+                                  , private juce::Timer
+#endif
 {
 public:
     std::function<void()> onRightClick;
@@ -44,8 +47,50 @@ public:
                 onRightClick();
             return;
         }
+#if JUCE_ANDROID
+        longTapTriggered = false;
+        touchDownPosition = event.getPosition();
+        startTimer (600);
+#endif
         juce::TextButton::mouseDown (event);
     }
+
+#if JUCE_ANDROID
+    void mouseDrag (const juce::MouseEvent& event) override
+    {
+        if (touchDownPosition.getDistanceFrom (event.getPosition()) > 18)
+            stopTimer();
+        juce::TextButton::mouseDrag (event);
+    }
+
+    void mouseUp (const juce::MouseEvent& event) override
+    {
+        stopTimer();
+        juce::TextButton::mouseUp (event);
+        longTapTriggered = false;
+    }
+
+    void internalClickCallback (const juce::ModifierKeys& modifiers) override
+    {
+        if (longTapTriggered)
+            return;
+        juce::TextButton::internalClickCallback (modifiers);
+    }
+
+    void timerCallback() override
+    {
+        if (isDown() && onRightClick != nullptr)
+        {
+            longTapTriggered = true;
+            stopTimer();
+            onRightClick();
+        }
+    }
+
+private:
+    juce::Point<int> touchDownPosition;
+    bool longTapTriggered = false;
+#endif
 };
 
 struct SmartArrangerSoundFontPreset
@@ -73,6 +118,7 @@ public:
     void childBoundsChanged (juce::Component* child) override;
     void handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiMessage& message) override;
     void showSettings();
+    void openStyleUrl (const juce::URL& url);
     void handleViewCommand (int commandId);
     bool isViewSectionVisible (int sectionId) const;
     int getViewMode() const noexcept { return viewMode; }
@@ -163,6 +209,7 @@ private:
     juce::Label midiOutActivity;
     juce::Label outputStatus;
     juce::TextButton panicButton { "ALL NOTES OFF" };
+    juce::TextButton settingsButton { "SETTINGS" };
     juce::Label partsHeader;
     juce::TextEditor partsList;
     juce::Label activityHeader;
