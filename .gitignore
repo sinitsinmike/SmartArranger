@@ -2,3 +2,9 @@ build-standalone/
 build-view-fix/
 outputs/
 .DS_Store
+Builds/Android/.gradle/
+Builds/Android/local.properties
+Builds/Android/app/build/
+Builds/Android/app/.cxx/
+Builds/Android/app/.externalNativeBuild/
+/JUCE/

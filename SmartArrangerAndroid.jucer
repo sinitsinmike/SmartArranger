@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT name="SmartArrangerStandalone" projectType="guiapp" bundleIdentifier="com.smartarranger.standalone"
+              version="0.2.0" companyName="Smart Arranger" companyCopyright="Smart Arranger"
+              id="SmArAn" jucerFormatVersion="1" useAppConfig="1" defines="JUCE_WEB_BROWSER=0&#10;JUCE_USE_CURL=0">
+  <MAINGROUP id="SmArRoot" name="Smart Arranger Standalone">
+    <GROUP id="SmArSource" name="Source">
+      <FILE id="SmArMain" name="Main.cpp" compile="1" resource="0" file="Source/Standalone/Main.cpp"/>
+      <FILE id="SmArMainComponent" name="MainComponent.cpp" compile="1" resource="0"
+            file="Source/Standalone/MainComponent.cpp"/>
+      <FILE id="SmArMainComponentH" name="MainComponent.h" compile="0" resource="0"
+            file="Source/Standalone/MainComponent.h"/>
+      <FILE id="SmArProcessor" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="Source/PluginProcessor.cpp"/>
+      <FILE id="SmArProcessorH" name="PluginProcessor.h" compile="0" resource="0"
+            file="Source/PluginProcessor.h"/>
+      <FILE id="SmArEditor" name="PluginEditor.cpp" compile="1" resource="0"
+            file="Source/PluginEditor.cpp"/>
+      <FILE id="SmArEditorH" name="PluginEditor.h" compile="0" resource="0"
+            file="Source/PluginEditor.h"/>
+      <FILE id="SmArStyleFile" name="StyleFile.cpp" compile="1" resource="0"
+            file="Source/StyleFile.cpp"/>
+      <FILE id="SmArStyleFileH" name="StyleFile.h" compile="0" resource="0"
+            file="Source/StyleFile.h"/>
+      <FILE id="SmArTinySF" name="tsf.h" compile="0" resource="0" file="ThirdParty/TinySoundFont/tsf.h"/>
+      <FILE id="SmArIcon" name="SmartArrangerIcon.png" compile="0" resource="0"
+            file="Assets/SmartArrangerIcon.png"/>
+    </GROUP>
+  </MAINGROUP>
+  <EXPORTFORMATS>
+    <ANDROIDSTUDIO targetFolder="Builds/Android" androidMinimumSDK="26" androidTargetSDK="35"
+                   androidEnableVirtualMidi="1" androidExternalWriteNeeded="0" androidEnableContentSharing="1"
+                   smallIcon="SmArIcon" bigIcon="SmArIcon">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="SmartArrangerStandalone"
+                        androidArchitectures="arm64-v8a"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="SmartArrangerStandalone"
+                        androidArchitectures="arm64-v8a"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_processors" path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_basics" path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="JUCE/modules"/>
+      </MODULEPATHS>
+    </ANDROIDSTUDIO>
+  </EXPORTFORMATS>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="0"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+  </MODULES>
+  <JUCEOPTIONS/>
+</JUCERPROJECT>

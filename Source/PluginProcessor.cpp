@@ -1505,7 +1505,7 @@ juce::AudioProcessorEditor* SmartArrangerAudioProcessor::createEditor()
 }
 
 bool SmartArrangerAudioProcessor::hasEditor() const { return true; }
-const juce::String SmartArrangerAudioProcessor::getName() const { return JucePlugin_Name; }
+const juce::String SmartArrangerAudioProcessor::getName() const { return "Smart Arranger"; }
 bool SmartArrangerAudioProcessor::acceptsMidi() const { return true; }
 bool SmartArrangerAudioProcessor::producesMidi() const { return true; }
 bool SmartArrangerAudioProcessor::isMidiEffect() const { return true; }

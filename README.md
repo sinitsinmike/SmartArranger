@@ -45,6 +45,12 @@ Load a style and press START in the plugin. With an Intro selected, it plays onc
 - The AU is a MIDI effect; place it in Logic's MIDI FX slot before a software instrument.
 - See [docs/implementation-status.md](docs/implementation-status.md) and [Smart_Arranger.md](Smart_Arranger.md).
 
+## Android development build
+
+- An Android Studio project is generated from `SmartArrangerAndroid.jucer` using the same JUCE 9.0.4 source tree as the macOS builds. Open `Builds/Android` in Android Studio, or build from a terminal with `cd Builds/Android && ./gradlew assembleDebug`.
+- The current debug APK targets ARM64 Android devices, with Android API 26 as its minimum and API 35 as its target. The Android SDK, CMake 3.22.1, and NDK 28.1.13356709 are required.
+- The current APK is a platform build of the shared desktop-oriented UI. Phone-first layout, an in-app Settings screen, device selection and Android hardware testing are still the next development steps; successful compilation does not yet mean the app is ready for everyday phone use.
+
 ## Next work
 
 1. Build v34 in GitHub Actions and verify it in Logic, including CASM destination-channel routing, Note Off handling, and the supported bypass/mask cases.

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<devices>
+  <device manufacturer="Smart Arranger" product="SmartArrangerStandalone" name="Smart Arranger SmartArrangerStandalone">
+    <port name="MIDI 2.0"/>
+  </device>
+</devices>
